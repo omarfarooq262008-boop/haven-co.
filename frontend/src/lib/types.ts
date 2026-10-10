@@ -1,0 +1,48 @@
+export type PropertyType = 'apartment' | 'villa' | 'townhouse' | 'commercial' | 'other'
+export type ListingType = 'sale' | 'rent'
+export type ListingStatus = 'active' | 'pending' | 'sold' | 'archived'
+export type MarketSection = 'buy' | 'rent'
+
+export type Profile = {
+  id: string
+  full_name: string | null
+  phone: string | null
+  created_at?: string
+}
+
+export type Listing = {
+  id: string
+  owner_id: string
+  title: string
+  description: string
+  price: number
+  city: string
+  address: string
+  property_type: PropertyType
+  listing_type: ListingType
+  bedrooms: number
+  bathrooms: number
+  area_sqft: number | null
+  image_urls: string[]
+  status: ListingStatus
+  created_at: string
+}
+
+export type Conversation = {
+  id: string
+  listing_id: string
+  buyer_id: string
+  owner_id: string
+  created_at: string
+  listings?: Pick<Listing, 'id' | 'title' | 'city' | 'image_urls'> | null
+  /** Other participant display name (filled on client) */
+  other_name?: string
+}
+
+export type Message = {
+  id: string
+  conversation_id: string
+  sender_id: string
+  body: string
+  created_at: string
+}

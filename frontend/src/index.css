@@ -1,0 +1,566 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #1a2744;
+  --color-ink-soft: #334155;
+  --color-sand: #f4f0ea;
+  --color-gold: #c9a24d;
+  --color-gold-dark: #a8842f;
+  --color-card: rgb(255 255 255 / 0.82);
+  --color-line: rgb(255 255 255 / 0.55);
+  --shadow-soft: 0 14px 40px -18px rgb(26 39 68 / 0.4);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    /* Fallback if the photo never paints */
+    background: linear-gradient(165deg, #1a2744 0%, #44566f 42%, #c9a24d 100%);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+}
+
+/* Fixed full-screen photo via pseudo-elements (avoids background-attachment: fixed lag) */
+.app-bg {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  /* Theme-coloured soft gradient fallback when the image fails */
+  background:
+    radial-gradient(900px 600px at 15% 10%, rgb(201 162 77 / 0.35), transparent 55%),
+    radial-gradient(800px 500px at 85% 20%, rgb(68 86 111 / 0.55), transparent 50%),
+    linear-gradient(165deg, #1a2744 0%, #44566f 48%, #2c3a52 100%);
+}
+
+.app-bg::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  background-image: url("/bg.png");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  /* Soft blur is expensive — keep it small */
+  filter: blur(3px);
+  transform: scale(1.02);
+}
+
+.app-shell--home .app-header,
+.app-shell--form .app-header {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.app-shell--home .glass-panel,
+.app-shell--home .glass-card,
+.app-shell--form .glass-panel {
+  background: rgb(255 255 255 / 0.92);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(26 39 68 / 0.62) 0%,
+    rgb(26 39 68 / 0.28) 42%,
+    rgb(26 39 68 / 0.55) 100%
+  );
+}
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+/* Shared page gutters — navbar, filters, grid share the same edges */
+.page-container {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: 16px;
+}
+
+@media (min-width: 768px) {
+  .page-container {
+    padding-inline: 32px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .page-container {
+    padding-inline: 48px;
+  }
+}
+
+.app-header {
+  background: rgb(255 255 255 / 0.9);
+  border-bottom: 1px solid rgb(255 255 255 / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-soft);
+}
+
+.app-header--scrolled {
+  background: rgb(255 255 255 / 0.95);
+  border-bottom-color: rgb(255 255 255 / 0.65);
+  box-shadow: 0 10px 28px -16px rgb(26 39 68 / 0.45);
+}
+
+/* Break out of .page-container so listings can use almost the full viewport */
+.listings-fullbleed {
+  width: 100vw;
+  max-width: 2200px;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-inline: 12px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 1024px) {
+  .listings-fullbleed {
+    padding-inline: 16px;
+  }
+}
+
+.listings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Two big cards only when each half is wide enough for the info panel */
+@media (min-width: 1200px) {
+  .listings-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Card layout follows its own width (phone, narrow tab, or half of a 2-up row) */
+.listing-card {
+  container-type: inline-size;
+  container-name: listing-card;
+}
+
+.listing-card-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+}
+
+.listing-card-media {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  min-width: 0;
+}
+
+.listing-card {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.listing-card-photo {
+  display: block;
+  transform: scale(1);
+  transition: transform 280ms ease;
+}
+
+.listing-card-details {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.listing-card-price {
+  font-size: clamp(1.2rem, 7cqi, 1.85rem);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.listing-card-title {
+  font-size: clamp(0.95rem, 4.5cqi, 1.15rem);
+}
+
+.listing-card-meta {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+/* Side-by-side only when THIS card is wide enough — never clip price/title */
+@container listing-card (min-width: 560px) {
+  .listing-card-layout {
+    grid-template-columns: minmax(0, 1.55fr) minmax(13rem, 1fr);
+    align-items: stretch;
+  }
+
+  .listing-card-media {
+    aspect-ratio: auto;
+    min-height: 260px;
+    align-self: stretch;
+  }
+
+  .listing-card-photo {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    width: 100%;
+  }
+
+  .listing-card-details {
+    padding: clamp(0.9rem, 3.2cqi, 1.35rem);
+  }
+
+  .listing-card-price {
+    font-size: clamp(1rem, 5cqi, 1.6rem);
+  }
+
+  .listing-card-meta {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .listing-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 18px 40px -18px rgb(26 39 68 / 0.45);
+  }
+
+  .listing-card:hover .listing-card-photo {
+    transform: scale(1.04);
+  }
+
+  .listing-card:active {
+    transform: scale(0.99);
+  }
+}
+
+/* One-shot CSS slide-in — cheaper than Framer on many cards */
+.home-slide-in {
+  animation: home-slide-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes home-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.btn-anim {
+  transition:
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease,
+    opacity 220ms ease,
+    border-color 220ms ease;
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-anim:hover:not(:disabled) {
+    transform: scale(1.03);
+  }
+}
+
+.btn-anim:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.glass-panel,
+.glass-card {
+  background: rgb(255 255 255 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.55);
+  box-shadow: var(--shadow-soft);
+}
+
+/* ——— Listing form (clear table-like sections) ——— */
+.listing-form {
+  max-width: 100%;
+}
+
+.form-section {
+  padding: 1.25rem 1.25rem 0.25rem;
+}
+
+@media (min-width: 768px) {
+  .form-section {
+    padding: 1.5rem 2rem 0.35rem;
+  }
+}
+
+.form-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1.1rem;
+}
+
+.form-step {
+  display: inline-flex;
+  height: 1.85rem;
+  width: 1.85rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--color-ink);
+  color: var(--color-sand);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.form-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+}
+
+.form-row {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .form-row {
+    grid-template-columns: minmax(9.5rem, 11.5rem) minmax(0, 1fr);
+    gap: 1rem 1.25rem;
+    align-items: start;
+  }
+
+  .form-row-label {
+    padding-top: 0.65rem;
+  }
+}
+
+.form-grid-2,
+.form-grid-3 {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  align-items: start;
+}
+
+@media (min-width: 640px) {
+  .form-grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 768px) {
+  .form-grid-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .form-grid-2 .form-row,
+  .form-grid-3 .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid-2 .form-row-label,
+  .form-grid-3 .form-row-label {
+    padding-top: 0;
+    min-height: 1.5rem;
+    display: flex;
+    align-items: flex-end;
+  }
+}
+
+.form-row-hint {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--color-ink-soft);
+}
+
+.form-control {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(26 39 68 / 0.14);
+  background: rgb(255 255 255 / 0.92);
+  padding: 0.7rem 0.9rem;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.form-control:hover {
+  border-color: rgb(201 162 77 / 0.55);
+}
+
+.form-control:focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgb(201 162 77 / 0.22);
+  background: rgb(255 255 255 / 0.95);
+}
+
+.form-affix {
+  position: relative;
+  min-width: 0;
+}
+
+.form-affix-prefix {
+  pointer-events: none;
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 600;
+  color: var(--color-ink-soft);
+}
+
+.form-control--affixed {
+  padding-left: 1.85rem;
+}
+
+.listing-type-toggle {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+@media (min-width: 480px) {
+  .listing-type-toggle {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.listing-type-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  cursor: pointer;
+  border-radius: 0.9rem;
+  border: 1px solid rgb(26 39 68 / 0.12);
+  background: rgb(255 255 255 / 0.55);
+  padding: 0.85rem 1rem;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.listing-type-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.listing-type-option-title {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.listing-type-option-sub {
+  font-size: 0.75rem;
+  color: var(--color-ink-soft);
+}
+
+.listing-type-option:hover {
+  border-color: rgb(201 162 77 / 0.55);
+}
+
+.listing-type-option.is-active {
+  border-color: var(--color-gold);
+  background: rgb(201 162 77 / 0.14);
+  box-shadow: 0 0 0 3px rgb(201 162 77 / 0.18);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .listing-type-option:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* Light page chrome motion — CSS only, one-shot, cheap */
+.soft-enter {
+  animation: soft-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes soft-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bg-card {
+  background-color: rgb(255 255 255 / 0.9) !important;
+  border-color: rgb(255 255 255 / 0.55);
+  box-shadow: var(--shadow-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .app-bg::before {
+    filter: blur(4px);
+  }
+
+  .app-bg,
+  .app-header,
+  .listing-card-photo,
+  .btn-anim {
+    transition: none !important;
+    will-change: auto;
+  }
+
+  .listing-card:hover .listing-card-photo,
+  .btn-anim:hover:not(:disabled),
+  .btn-anim:active:not(:disabled),
+  .listing-type-option:hover {
+    transform: none !important;
+  }
+
+  .soft-enter,
+  .home-slide-in {
+    animation: none !important;
+  }
+
+  .listing-card,
+  .listing-card-photo {
+    transition: none !important;
+  }
+
+  .listing-card:hover,
+  .listing-card:hover .listing-card-photo,
+  .listing-card:active {
+    transform: none !important;
+  }
+}
