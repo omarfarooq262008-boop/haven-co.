@@ -79,13 +79,7 @@ export function MyListingsPage() {
       {loading ? (
         <p className="text-ink-soft">Loading your listings…</p>
       ) : listings.length === 0 ? (
-        <p className="text-ink-soft">
-          You have not listed any properties yet.{' '}
-          <Link to="/listings/new" className="font-semibold text-gold-dark">
-            Add one
-          </Link>
-          .
-        </p>
+        <p className="text-ink-soft">You haven&apos;t listed any properties yet.</p>
       ) : (
         <ul className="space-y-3">
           {listings.map((listing) => (
