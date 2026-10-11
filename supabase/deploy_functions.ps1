@@ -1,7 +1,9 @@
 # Deploy all Haven & Co. Edge Functions (skips _shared).
+# Currently discovers: notify-listing-review, notify-new-message, send-booking-email, …
 # Prerequisites: supabase CLI logged in and project linked (`supabase link`).
 # Usage (from repo root or this folder):
 #   .\supabase\deploy_functions.ps1
+
 
 $ErrorActionPreference = 'Stop'
 

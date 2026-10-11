@@ -15,6 +15,7 @@
 - `RESEND_FROM_EMAIL`
 - `APP_URL` (public site URL, no trailing slash — used in email links)
 - `MESSAGE_NOTIFY_WEBHOOK_SECRET`
+- `LISTING_REVIEW_WEBHOOK_SECRET`
 
 (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to Edge Functions.)
 
@@ -38,14 +39,24 @@
 
 1. `supabase login` and `supabase link --project-ref YOUR_PROJECT_REF`
 2. Set the Edge Function secrets listed above.
-3. Deploy with `.\supabase\deploy_functions.ps1` (or deploy `send-booking-email` and `notify-new-message` individually).
+3. Deploy with `.\supabase\deploy_functions.ps1` (deploys `send-booking-email`, `notify-new-message`, `notify-listing-review`, …).
 
-### 3. Database Webhook (new chat message emails)
+### 3. Database Webhooks
 
-1. Dashboard → **Database → Webhooks** (or Integrations → Database Webhooks).
-2. Create webhook on table `public.messages`, event **Insert**.
-3. URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/notify-new-message`
-4. Headers: `Content-Type: application/json` and `x-webhook-secret: <MESSAGE_NOTIFY_WEBHOOK_SECRET>`.
+**Chat messages**
+
+1. Dashboard → **Database → Webhooks**.
+2. Name: `notify-new-message`
+3. Table: `public.messages` · Events: **Insert**
+4. URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/notify-new-message`
+5. Headers: `Content-Type: application/json` and `x-webhook-secret: <MESSAGE_NOTIFY_WEBHOOK_SECRET>`
+
+**Listing review**
+
+1. Name: `notify-listing-review`
+2. Table: `public.listings` · Events: **Insert** and **Update**
+3. URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/notify-listing-review`
+4. Headers: `Content-Type: application/json` and `x-webhook-secret: <LISTING_REVIEW_WEBHOOK_SECRET>`
 
 ### 4. Auth URL config
 

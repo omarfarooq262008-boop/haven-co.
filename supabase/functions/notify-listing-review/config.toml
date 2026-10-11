@@ -1,0 +1,2 @@
+[functions.notify-listing-review]
+verify_jwt = false

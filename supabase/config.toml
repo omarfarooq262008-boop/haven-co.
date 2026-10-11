@@ -4,6 +4,9 @@
 [functions.send-booking-email]
 verify_jwt = true
 
-# Database Webhooks call this with a shared secret header (not a user JWT).
+# Database Webhooks call these with a shared secret header (not a user JWT).
 [functions.notify-new-message]
+verify_jwt = false
+
+[functions.notify-listing-review]
 verify_jwt = false
