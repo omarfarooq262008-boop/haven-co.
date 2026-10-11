@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { LIMITS, validateMessageBody } from '../lib/listingForm'
 import { bubbleVariants } from '../lib/motion'
@@ -14,6 +14,7 @@ export function MessagesPage() {
   const { conversationId } = useParams()
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const bottomRef = useRef<HTMLDivElement>(null)
   const reduced = useReducedMotion()
 
@@ -30,6 +31,7 @@ export function MessagesPage() {
     () => conversations.find((c) => c.id === conversationId) ?? null,
     [conversations, conversationId],
   )
+  const conversationMissing = Boolean(conversationId) && !loadingList && !active
 
   useEffect(() => {
     if (!user) return
@@ -83,8 +85,9 @@ export function MessagesPage() {
   }, [user])
 
   useEffect(() => {
-    if (!user || !conversationId) {
+    if (!user || !conversationId || conversationMissing) {
       setMessages([])
+      setLoadingChat(false)
       return
     }
 
@@ -126,14 +129,22 @@ export function MessagesPage() {
       cancelled = true
       void supabase.removeChannel(channel)
     }
-  }, [user, conversationId])
+  }, [user, conversationId, conversationMissing])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, conversationId])
 
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    )
+  }
 
   async function sendMessage(e: FormEvent) {
     e.preventDefault()
@@ -224,6 +235,19 @@ export function MessagesPage() {
           {!conversationId ? (
             <div className="flex flex-1 items-center justify-center p-6 text-center text-ink-soft">
               Select a conversation, or message an owner from a listing page.
+            </div>
+          ) : conversationMissing ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+              <p className="font-display text-xl font-semibold text-ink">Conversation not found</p>
+              <p className="max-w-sm text-sm text-ink-soft">
+                This chat may have been removed, or you don&apos;t have access to it.
+              </p>
+              <Link
+                to="/messages"
+                className="btn-anim rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-sand"
+              >
+                Back to Messages
+              </Link>
             </div>
           ) : (
             <>

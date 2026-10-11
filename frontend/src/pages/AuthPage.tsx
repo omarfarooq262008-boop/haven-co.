@@ -18,9 +18,10 @@ export function AuthPage({ mode: modeProp }: { mode?: Mode }) {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const rawFrom = (location.state as { from?: string } | null)?.from
   const from =
-    typeof (location.state as { from?: string } | null)?.from === 'string'
-      ? (location.state as { from: string }).from
+    typeof rawFrom === 'string' && rawFrom.startsWith('/') && !rawFrom.startsWith('//')
+      ? rawFrom
       : '/'
 
   if (user) return <Navigate to={from} replace />

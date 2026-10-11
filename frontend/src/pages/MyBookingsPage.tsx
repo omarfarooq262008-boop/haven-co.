@@ -44,7 +44,9 @@ export function MyBookingsPage() {
   }, [user])
 
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: '/my-bookings' }} />
+  }
 
   async function cancelBooking(booking: Booking) {
     if (!window.confirm('Cancel this meeting?')) return
