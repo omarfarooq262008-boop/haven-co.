@@ -9,12 +9,14 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   }`
 
 export function Layout() {
-  const { user, loading, signOut } = useAuth()
+  const { user, profile, loading, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [scrolled, setScrolled] = useState(false)
   const isForm =
-    pathname.startsWith('/listings/new') || pathname.includes('/edit')
+    pathname.startsWith('/listings/new') ||
+    pathname.includes('/edit') ||
+    pathname.endsWith('/book')
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16)
@@ -55,9 +57,17 @@ export function Layout() {
                 <NavLink to="/my-listings" className={linkClass}>
                   My listings
                 </NavLink>
+                <NavLink to="/my-bookings" className={linkClass}>
+                  My bookings
+                </NavLink>
                 <NavLink to="/messages" className={linkClass}>
                   Messages
                 </NavLink>
+                {profile?.is_admin ? (
+                  <NavLink to="/admin" className={linkClass}>
+                    Admin
+                  </NavLink>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void handleLogout()}

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ListingImage } from '../components/ListingImage'
+import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { ListingTypeBadge } from '../components/ListingTypeBadge'
 import { useAuth } from '../context/AuthContext'
 import { formatListingPrice } from '../lib/format'
@@ -83,9 +85,12 @@ export function ListingDetailPage() {
       <div className="space-y-3">
         <div className="aspect-[16/10] overflow-hidden rounded-2xl bg-line">
           {photos[activePhoto] ? (
-            <img
+            <ListingImage
               src={photos[activePhoto]}
               alt={`${listing.title} photo ${activePhoto + 1}`}
+              size="detail"
+              loading={activePhoto === 0 ? 'eager' : 'lazy'}
+              fetchPriority={activePhoto === 0 ? 'high' : 'auto'}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -103,7 +108,12 @@ export function ListingDetailPage() {
                   index === activePhoto ? 'border-gold' : 'border-transparent'
                 }`}
               >
-                <img src={url} alt="" className="aspect-square w-full object-cover" />
+                <ListingImage
+                  src={url}
+                  alt=""
+                  size="detailThumb"
+                  className="aspect-square w-full object-cover"
+                />
               </button>
             ))}
           </div>
@@ -114,7 +124,24 @@ export function ListingDetailPage() {
         <Link to="/" className="text-sm text-ink-soft hover:text-ink">
           ← All listings
         </Link>
-        <ListingTypeBadge listingType={listing.listing_type} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ListingTypeBadge listingType={listing.listing_type} />
+          {isOwner || listing.status !== 'approved' ? (
+            <ListingStatusBadge status={listing.status} />
+          ) : null}
+        </div>
+        {isOwner && listing.status === 'pending' ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Your listing is under review
+          </p>
+        ) : null}
+        {isOwner && listing.status === 'rejected' ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {listing.rejection_reason
+              ? `Rejected: ${listing.rejection_reason}`
+              : 'This listing was rejected.'}
+          </p>
+        ) : null}
         <p className="font-display text-3xl font-bold text-ink">
           {formatListingPrice(Number(listing.price), listing.listing_type ?? 'sale')}
         </p>
@@ -127,10 +154,6 @@ export function ListingDetailPage() {
           <div>
             <dt className="text-ink-soft">Type</dt>
             <dd className="capitalize font-medium">{listing.property_type}</dd>
-          </div>
-          <div>
-            <dt className="text-ink-soft">Status</dt>
-            <dd className="capitalize font-medium">{listing.status}</dd>
           </div>
           <div>
             <dt className="text-ink-soft">Bedrooms</dt>
@@ -170,14 +193,33 @@ export function ListingDetailPage() {
             </Link>
           </div>
         ) : (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void startConversation()}
-            className="btn-anim rounded-xl bg-gold px-5 py-3 font-semibold text-ink hover:bg-gold-dark disabled:opacity-60"
-          >
-            {busy ? 'Opening chat…' : 'Message owner'}
-          </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Link
+                to={user ? `/listings/${listing.id}/book` : '/login'}
+                state={user ? undefined : { from: `/listings/${listing.id}/book` }}
+                className="btn-anim rounded-xl bg-gold px-5 py-3 font-semibold text-ink hover:bg-gold-dark"
+              >
+                Book a meeting
+              </Link>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void startConversation()}
+                className="btn-anim rounded-xl border border-line bg-white/60 px-5 py-3 font-semibold text-ink hover:bg-sand disabled:opacity-60"
+              >
+                {busy ? 'Opening chat…' : 'Message owner'}
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled
+              title="Coming soon"
+              className="rounded-xl border border-dashed border-line px-5 py-3 text-left text-sm font-semibold text-ink-soft opacity-70"
+            >
+              Hold this property <span className="font-normal">(Coming soon)</span>
+            </button>
+          </div>
         )}
       </div>
     </div>

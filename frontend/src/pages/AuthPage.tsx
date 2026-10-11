@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { friendlyError } from '../lib/errors'
 
 type Mode = 'login' | 'signup'
 
@@ -17,8 +18,12 @@ export function AuthPage({ mode: modeProp }: { mode?: Mode }) {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const from =
+    typeof (location.state as { from?: string } | null)?.from === 'string'
+      ? (location.state as { from: string }).from
+      : '/'
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={from} replace />
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -30,24 +35,24 @@ export function AuthPage({ mode: modeProp }: { mode?: Mode }) {
       const { error: signError } = await signIn(email, password)
       setBusy(false)
       if (signError) {
-        setError(signError)
+        setError(friendlyError(signError, 'Could not log in. Please try again.'))
         return
       }
-      navigate('/')
+      navigate(from)
       return
     }
 
     const { error: signError, needsEmailConfirm } = await signUp(email, password, fullName)
     setBusy(false)
     if (signError) {
-      setError(signError)
+      setError(friendlyError(signError, 'Could not create your account. Please try again.'))
       return
     }
     if (needsEmailConfirm) {
       setInfo('Check your email to confirm your account, then log in.')
       return
     }
-    navigate('/')
+    navigate(from)
   }
 
   return (

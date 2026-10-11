@@ -1,6 +1,7 @@
 import { Navigate, useNavigate } from 'react-router-dom'
 import { ListingForm } from '../components/ListingForm'
 import { useAuth } from '../context/AuthContext'
+import { friendlyError } from '../lib/errors'
 import { emptyListingForm, listingPayloadFromForm } from '../lib/listingForm'
 import { resolveOrderedListingImages } from '../lib/listingImages'
 import { supabase } from '../lib/supabase'
@@ -19,22 +20,29 @@ export function NewListingPage() {
         <h1 className="mt-1 font-display text-3xl font-bold text-ink md:text-4xl">Add listing</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-soft md:text-base">
           Fill in each section below. Required fields are marked with *. Photos are compressed to
-          ~300 KB before upload.
+          ~300 KB before upload. New listings are reviewed before they appear publicly.
         </p>
       </div>
 
       <ListingForm
         initial={emptyListingForm()}
         requireImages
-        submitLabel="Publish listing"
+        submitLabel="Submit for review"
         busyLabel="Compressing & uploading…"
         onSubmit={async (values, images, reportProgress) => {
           const imageUrls = await resolveOrderedListingImages(user.id, images, reportProgress)
           if (imageUrls.length < 1) throw new Error('Add at least one photo')
           const payload = listingPayloadFromForm(values, user.id, imageUrls)
           const { data, error } = await supabase.from('listings').insert(payload).select('id').single()
-          if (error) throw new Error(error.message)
-          navigate(`/listings/${data.id}`)
+          if (error) {
+            throw new Error(
+              friendlyError(
+                error.message,
+                "You've reached the limit of 10 new listings per day. Please try again tomorrow.",
+              ),
+            )
+          }
+          navigate('/my-listings', { state: { underReview: true, listingId: data.id } })
         }}
       />
     </div>

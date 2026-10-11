@@ -2,6 +2,7 @@ import { Bath, BedDouble, Ruler } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../lib/format'
 import type { Listing } from '../lib/types'
+import { ListingImage } from './ListingImage'
 import { ListingTypeBadge } from './ListingTypeBadge'
 
 type Props = {
@@ -27,11 +28,10 @@ export function ListingCard({ listing, index = 0 }: Props) {
       <div className="listing-card-layout">
         <div className="listing-card-media relative min-w-0 overflow-hidden bg-sand/60">
           {listing.image_urls?.[0] ? (
-            <img
+            <ListingImage
               src={listing.image_urls[0]}
               alt={listing.title}
-              loading="lazy"
-              decoding="async"
+              size="card"
               className="listing-card-photo h-full w-full object-cover"
             />
           ) : (

@@ -1,4 +1,4 @@
-import type { ListingStatus, ListingType, PropertyType } from './types'
+import type { ListingType, PropertyType } from './types'
 
 export const PROPERTY_TYPES: PropertyType[] = [
   'apartment',
@@ -10,7 +10,17 @@ export const PROPERTY_TYPES: PropertyType[] = [
 
 export const LISTING_TYPES: ListingType[] = ['sale', 'rent']
 
-export const LISTING_STATUSES: ListingStatus[] = ['active', 'pending', 'sold', 'archived']
+/** Keep in sync with supabase CHECK constraints */
+export const LIMITS = {
+  titleMin: 3,
+  titleMax: 120,
+  descriptionMin: 20,
+  descriptionMax: 5000,
+  cityMax: 80,
+  addressMax: 200,
+  messageMax: 2000,
+  rejectionReasonMax: 500,
+} as const
 
 export type ListingFormValues = {
   title: string
@@ -23,7 +33,6 @@ export type ListingFormValues = {
   bedrooms: string
   bathrooms: string
   area_sqft: string
-  status: ListingStatus
 }
 
 export type ListingFormErrors = Partial<Record<keyof ListingFormValues | 'images', string>>
@@ -39,7 +48,6 @@ export const emptyListingForm = (): ListingFormValues => ({
   bedrooms: '1',
   bathrooms: '1',
   area_sqft: '',
-  status: 'active',
 })
 
 export function validateListingForm(
@@ -47,20 +55,32 @@ export function validateListingForm(
   options?: { requireImages?: boolean; imageCount?: number },
 ): ListingFormErrors {
   const errors: ListingFormErrors = {}
+  const title = values.title.trim()
+  const description = values.description.trim()
+  const city = values.city.trim()
+  const address = values.address.trim()
 
-  if (!values.title.trim()) errors.title = 'Title is required'
-  else if (values.title.trim().length < 3) errors.title = 'Title must be at least 3 characters'
+  if (!title) errors.title = 'Title is required'
+  else if (title.length < LIMITS.titleMin) errors.title = `Title must be at least ${LIMITS.titleMin} characters`
+  else if (title.length > LIMITS.titleMax) errors.title = `Title must be at most ${LIMITS.titleMax} characters`
 
-  if (!values.description.trim()) errors.description = 'Description is required'
-  else if (values.description.trim().length < 20) {
-    errors.description = 'Description must be at least 20 characters'
+  if (!description) errors.description = 'Description is required'
+  else if (description.length < LIMITS.descriptionMin) {
+    errors.description = `Description must be at least ${LIMITS.descriptionMin} characters`
+  } else if (description.length > LIMITS.descriptionMax) {
+    errors.description = `Description must be at most ${LIMITS.descriptionMax} characters`
   }
 
   const price = Number(values.price)
   if (values.price.trim() === '' || Number.isNaN(price)) errors.price = 'Enter a valid price'
-  else if (price < 0) errors.price = 'Price cannot be negative'
+  else if (price <= 0) errors.price = 'Price must be greater than zero'
 
-  if (!values.city.trim()) errors.city = 'City is required'
+  if (!city) errors.city = 'City is required'
+  else if (city.length > LIMITS.cityMax) errors.city = `City must be at most ${LIMITS.cityMax} characters`
+
+  if (address.length > LIMITS.addressMax) {
+    errors.address = `Address must be at most ${LIMITS.addressMax} characters`
+  }
 
   if (!PROPERTY_TYPES.includes(values.property_type)) {
     errors.property_type = 'Choose a property type'
@@ -92,6 +112,15 @@ export function validateListingForm(
   return errors
 }
 
+export function validateMessageBody(body: string): string | null {
+  const text = body.trim()
+  if (!text) return 'Write a message before sending.'
+  if (text.length > LIMITS.messageMax) {
+    return `Message must be at most ${LIMITS.messageMax} characters.`
+  }
+  return null
+}
+
 export function listingPayloadFromForm(values: ListingFormValues, ownerId: string, imageUrls: string[]) {
   return {
     owner_id: ownerId,
@@ -106,11 +135,9 @@ export function listingPayloadFromForm(values: ListingFormValues, ownerId: strin
     bathrooms: Number(values.bathrooms),
     area_sqft: values.area_sqft.trim() ? Number(values.area_sqft) : null,
     image_urls: imageUrls,
-    status: values.status,
   }
 }
 
-// Re-export image helpers so existing imports keep working
 export {
   MAX_LISTING_PHOTOS,
   deleteListingImages,

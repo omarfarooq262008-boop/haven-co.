@@ -2,7 +2,10 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { LIMITS, validateMessageBody } from '../lib/listingForm'
 import { bubbleVariants } from '../lib/motion'
+import { ListingImage } from '../components/ListingImage'
+import { friendlyError } from '../lib/errors'
 import { formatMessageTime } from '../lib/messaging'
 import { supabase } from '../lib/supabase'
 import type { Conversation, Message, Profile } from '../lib/types'
@@ -56,7 +59,7 @@ export function MessagesPage() {
       let names = new Map<string, string>()
       if (otherIds.length > 0) {
         const { data: profiles } = await supabase
-          .from('profiles')
+          .from('profiles_safe')
           .select('id, full_name')
           .in('id', otherIds)
         for (const p of (profiles ?? []) as Profile[]) {
@@ -136,8 +139,9 @@ export function MessagesPage() {
     e.preventDefault()
     if (!user || !conversationId) return
     const text = body.trim()
-    if (!text) {
-      setSendError('Write a message before sending.')
+    const validationError = validateMessageBody(body)
+    if (validationError) {
+      setSendError(validationError)
       return
     }
 
@@ -154,7 +158,9 @@ export function MessagesPage() {
     setSending(false)
     if (insertError) {
       setBody(text)
-      setSendError(insertError.message)
+      setSendError(
+        friendlyError(insertError.message, 'Please wait a moment before sending another message.'),
+      )
     }
   }
 
@@ -194,9 +200,10 @@ export function MessagesPage() {
                     >
                       <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-line">
                         {c.listings?.image_urls?.[0] ? (
-                          <img
+                          <ListingImage
                             src={c.listings.image_urls[0]}
                             alt=""
+                            size="thumb"
                             className="h-full w-full object-cover"
                           />
                         ) : null}
@@ -273,6 +280,7 @@ export function MessagesPage() {
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     placeholder="Write a message…"
+                    maxLength={LIMITS.messageMax}
                     disabled={sending}
                     className="flex-1 rounded border border-line px-3 py-2 outline-none focus:border-gold disabled:opacity-60"
                   />

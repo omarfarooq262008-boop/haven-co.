@@ -1,12 +1,13 @@
 export type PropertyType = 'apartment' | 'villa' | 'townhouse' | 'commercial' | 'other'
 export type ListingType = 'sale' | 'rent'
-export type ListingStatus = 'active' | 'pending' | 'sold' | 'archived'
+export type ListingStatus = 'pending' | 'approved' | 'rejected'
 export type MarketSection = 'buy' | 'rent'
 
 export type Profile = {
   id: string
   full_name: string | null
   phone: string | null
+  is_admin?: boolean
   created_at?: string
 }
 
@@ -25,6 +26,7 @@ export type Listing = {
   area_sqft: number | null
   image_urls: string[]
   status: ListingStatus
+  rejection_reason?: string | null
   created_at: string
 }
 
@@ -45,4 +47,21 @@ export type Message = {
   sender_id: string
   body: string
   created_at: string
+}
+
+export type BookingStatus = 'confirmed' | 'cancelled'
+
+export type Booking = {
+  id: string
+  listing_id: string
+  owner_id: string
+  visitor_id: string | null
+  visitor_name: string
+  visitor_email: string
+  visitor_phone: string
+  meeting_at: string
+  note: string
+  status: BookingStatus
+  created_at: string
+  listings?: Pick<Listing, 'id' | 'title' | 'city' | 'address' | 'image_urls'> | null
 }

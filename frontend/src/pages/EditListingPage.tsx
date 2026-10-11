@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ListingForm } from '../components/ListingForm'
+import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { useAuth } from '../context/AuthContext'
 import { emptyListingForm, listingPayloadFromForm, type ListingFormValues } from '../lib/listingForm'
 import { deleteListingImages, resolveOrderedListingImages } from '../lib/listingImages'
@@ -60,7 +61,6 @@ export function EditListingPage() {
     bedrooms: String(listing.bedrooms),
     bathrooms: String(listing.bathrooms),
     area_sqft: listing.area_sqft != null ? String(listing.area_sqft) : '',
-    status: listing.status,
   }
 
   const originalUrls = listing.image_urls ?? []
@@ -68,19 +68,26 @@ export function EditListingPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div className="glass-panel rounded-2xl px-5 py-5 md:px-7">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">Your property</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">Your property</p>
+          <ListingStatusBadge status={listing.status} />
+        </div>
         <h1 className="mt-1 font-display text-3xl font-bold text-ink md:text-4xl">Edit listing</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-soft md:text-base">
           Update any section below. New photos are compressed on save; removed photos are deleted
-          from storage.
+          from storage. Approval status can only be changed by an admin.
         </p>
+        {listing.status === 'rejected' && listing.rejection_reason ? (
+          <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            Rejected: {listing.rejection_reason}
+          </p>
+        ) : null}
       </div>
 
       <ListingForm
         initial={initial}
         existingImageUrls={originalUrls}
         requireImages
-        showStatus
         submitLabel="Save changes"
         busyLabel="Saving…"
         onSubmit={async (values, images, reportProgress) => {
@@ -110,13 +117,12 @@ export function EditListingPage() {
               bathrooms: payload.bathrooms,
               area_sqft: payload.area_sqft,
               image_urls: payload.image_urls,
-              status: payload.status,
             })
             .eq('id', listing.id)
             .eq('owner_id', user.id)
 
           if (updateError) throw new Error(updateError.message)
-          navigate(`/listings/${listing.id}`)
+          navigate('/my-listings')
         }}
       />
     </div>

@@ -1,0 +1,9 @@
+# Minimal Supabase config for Edge Functions deploy.
+# Project ref is set via `supabase link` or `--project-ref`.
+
+[functions.send-booking-email]
+verify_jwt = true
+
+# Database Webhooks call this with a shared secret header (not a user JWT).
+[functions.notify-new-message]
+verify_jwt = false

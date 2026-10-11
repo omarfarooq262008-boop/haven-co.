@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { ListingImage } from '../components/ListingImage'
+import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { ListingTypeBadge } from '../components/ListingTypeBadge'
 import { formatListingPrice } from '../lib/format'
 import { deleteListingImages } from '../lib/listingImages'
@@ -9,10 +11,17 @@ import type { Listing } from '../lib/types'
 
 export function MyListingsPage() {
   const { user, loading: authLoading } = useAuth()
+  const location = useLocation()
+  const underReview = Boolean((location.state as { underReview?: boolean } | null)?.underReview)
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [showReviewNotice, setShowReviewNotice] = useState(underReview)
+
+  useEffect(() => {
+    if (underReview) setShowReviewNotice(true)
+  }, [underReview])
 
   useEffect(() => {
     if (!user) return
@@ -72,6 +81,19 @@ export function MyListingsPage() {
         </Link>
       </div>
 
+      {showReviewNotice && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Your listing is under review
+          <button
+            type="button"
+            className="ml-3 text-amber-800 underline"
+            onClick={() => setShowReviewNotice(false)}
+          >
+            Dismiss
+          </button>
+        </p>
+      )}
+
       {error && (
         <p className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
       )}
@@ -89,23 +111,32 @@ export function MyListingsPage() {
             >
               <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-line">
                 {listing.image_urls?.[0] ? (
-                  <img src={listing.image_urls[0]} alt="" className="h-full w-full object-cover" />
+                  <ListingImage
+                    src={listing.image_urls[0]}
+                    alt=""
+                    size="thumb"
+                    className="h-full w-full object-cover"
+                  />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="mb-1">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
                   <ListingTypeBadge listingType={listing.listing_type} />
+                  <ListingStatusBadge status={listing.status} />
                 </div>
                 <Link to={`/listings/${listing.id}`} className="font-semibold text-ink hover:text-gold-dark">
                   {listing.title}
                 </Link>
                 <p className="text-sm text-ink-soft">
                   {formatListingPrice(Number(listing.price), listing.listing_type ?? 'sale')} ·{' '}
-                  {listing.city} · {listing.status}
+                  {listing.city}
                 </p>
                 <p className="text-sm text-ink-soft">
                   {listing.bedrooms} beds · {listing.bathrooms} baths
                 </p>
+                {listing.status === 'rejected' && listing.rejection_reason ? (
+                  <p className="mt-1 text-sm text-red-700">Rejected: {listing.rejection_reason}</p>
+                ) : null}
               </div>
               <div className="flex gap-2">
                 <Link

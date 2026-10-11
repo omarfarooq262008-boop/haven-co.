@@ -1,13 +1,13 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  LISTING_STATUSES,
+  LIMITS,
   PROPERTY_TYPES,
   validateListingForm,
   type ListingFormErrors,
   type ListingFormValues,
 } from '../lib/listingForm'
 import type { OrderedListingImage, UploadProgress } from '../lib/listingImages'
-import type { ListingStatus, ListingType, PropertyType } from '../lib/types'
+import type { ListingType, PropertyType } from '../lib/types'
 import {
   PhotoUploader,
   galleryFromUrls,
@@ -21,7 +21,6 @@ type Props = {
   submitLabel: string
   busyLabel: string
   requireImages?: boolean
-  showStatus?: boolean
   onSubmit: (
     values: ListingFormValues,
     images: OrderedListingImage[],
@@ -37,20 +36,12 @@ const PROPERTY_LABELS: Record<PropertyType, string> = {
   other: 'Other',
 }
 
-const STATUS_LABELS: Record<ListingStatus, string> = {
-  active: 'Active — visible to buyers',
-  pending: 'Pending — under review',
-  sold: 'Sold',
-  archived: 'Archived — hidden',
-}
-
 export function ListingForm({
   initial,
   existingImageUrls = [],
   submitLabel,
   busyLabel,
   requireImages = false,
-  showStatus = false,
   onSubmit,
 }: Props) {
   const [values, setValues] = useState<ListingFormValues>(initial)
@@ -124,6 +115,7 @@ export function ListingForm({
               value={values.title}
               onChange={(e) => update('title', e.target.value)}
               placeholder="Enter listing title"
+              maxLength={LIMITS.titleMax}
               className="form-control"
               autoComplete="off"
             />
@@ -133,7 +125,7 @@ export function ListingForm({
             required
             htmlFor="listing-description"
             error={errors.description}
-            hint="At least 20 characters — mention size, finishes, and nearby landmarks."
+            hint={`${LIMITS.descriptionMin}–${LIMITS.descriptionMax} characters — mention size, finishes, and nearby landmarks.`}
           >
             <textarea
               id="listing-description"
@@ -141,6 +133,7 @@ export function ListingForm({
               value={values.description}
               onChange={(e) => update('description', e.target.value)}
               placeholder="Describe the property…"
+              maxLength={LIMITS.descriptionMax}
               className="form-control min-h-[120px] resize-y"
             />
           </FormRow>
@@ -190,7 +183,7 @@ export function ListingForm({
                 <input
                   id="listing-price"
                   type="number"
-                  min="0"
+                  min="1"
                   step="1"
                   value={values.price}
                   onChange={(e) => update('price', e.target.value)}
@@ -224,6 +217,7 @@ export function ListingForm({
                 value={values.city}
                 onChange={(e) => update('city', e.target.value)}
                 placeholder="e.g. Karachi"
+                maxLength={LIMITS.cityMax}
                 className="form-control"
                 autoComplete="address-level2"
               />
@@ -234,6 +228,7 @@ export function ListingForm({
                 value={values.address}
                 onChange={(e) => update('address', e.target.value)}
                 placeholder="Street, neighbourhood…"
+                maxLength={LIMITS.addressMax}
                 className="form-control"
                 autoComplete="street-address"
               />
@@ -277,27 +272,8 @@ export function ListingForm({
           </div>
       </FormSection>
 
-      {showStatus && (
-        <FormSection step="5" title="Visibility" hint="Control whether this listing is shown publicly.">
-          <FormRow label="Status" htmlFor="listing-status">
-            <select
-              id="listing-status"
-              value={values.status}
-              onChange={(e) => update('status', e.target.value as ListingStatus)}
-              className="form-control"
-            >
-              {LISTING_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-          </FormRow>
-        </FormSection>
-      )}
-
       <FormSection
-        step={showStatus ? '6' : '5'}
+        step="5"
         title="Photos"
         hint="Add clear photos. The first image is the cover — you can change it after uploading."
         last

@@ -30,7 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const loadProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
+    // profiles_safe masks phone for other users; own row still includes phone
+    const { data } = await supabase.from('profiles_safe').select('*').eq('id', userId).maybeSingle()
     setProfile(data)
   }, [])
 

@@ -55,7 +55,7 @@ export function HomePage() {
       let query = supabase
         .from('listings')
         .select('*')
-        .eq('status', 'active')
+        .eq('status', 'approved')
         .eq('listing_type', listingType)
         .order('created_at', { ascending: false })
 
