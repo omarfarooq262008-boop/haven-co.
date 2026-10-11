@@ -1,0 +1,73 @@
+# Pre-launch setup checklist
+
+## Secrets to set (names only)
+
+### Vercel (frontend env — rebuild after changing)
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SENTRY_DSN` (optional)
+- `VITE_SUPABASE_IMAGE_TRANSFORM` (optional; `true` only on Pro+ with transforms on)
+
+### Supabase Edge Function secrets (`supabase secrets set …`)
+
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
+- `APP_URL` (public site URL, no trailing slash — used in email links)
+- `MESSAGE_NOTIFY_WEBHOOK_SECRET`
+
+(`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to Edge Functions.)
+
+---
+
+## Dashboard steps still required
+
+### 1. Database SQL
+
+1. Run `supabase/schema.sql` (new project) or confirm schema already exists.
+2. Run `supabase/all_migrations_in_order.sql` (or follow `supabase/RUN_ORDER.md`).
+3. Promote yourself to admin (SQL Editor):
+
+   ```sql
+   update public.profiles
+   set is_admin = true
+   where id = (select id from auth.users where email = 'YOUR_EMAIL@example.com');
+   ```
+
+### 2. Edge Functions
+
+1. `supabase login` and `supabase link --project-ref YOUR_PROJECT_REF`
+2. Set the Edge Function secrets listed above.
+3. Deploy with `.\supabase\deploy_functions.ps1` (or deploy `send-booking-email` and `notify-new-message` individually).
+
+### 3. Database Webhook (new chat message emails)
+
+1. Dashboard → **Database → Webhooks** (or Integrations → Database Webhooks).
+2. Create webhook on table `public.messages`, event **Insert**.
+3. URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/notify-new-message`
+4. Headers: `Content-Type: application/json` and `x-webhook-secret: <MESSAGE_NOTIFY_WEBHOOK_SECRET>`.
+
+### 4. Auth URL config
+
+1. **Authentication → URL configuration**
+2. Set **Site URL** to your production frontend URL.
+3. Add the same URL (and local `http://localhost:5173` if needed) under **Redirect URLs**.
+
+### 5. Auth rate limits
+
+1. **Authentication → Rate Limits**
+2. Review email send limit, sign-up/sign-in per IP, OTP/cooldown, and token refresh.
+3. Enable **IP address forwarding** if the app is behind Vercel/Cloudflare.
+4. Suggested starting points are documented in the Auth rate-limits guide; keep built-in email at 2/hour unless custom SMTP is configured.
+
+### 6. Resend domain
+
+1. Create a Resend API key; store it as `RESEND_API_KEY`.
+2. Verify your sending domain in Resend (DNS: SPF, DKIM, DMARC as required).
+3. Set `RESEND_FROM_EMAIL` to an address on that verified domain.
+4. Until the domain is verified, Resend only allows sending to your own account email.
+
+### 7. Optional
+
+- **Sentry:** create a React project, copy the DSN into `VITE_SENTRY_DSN` (Vercel + local `.env`), redeploy.
+- **Image transforms:** Supabase Pro+ → Storage → enable Image Transformations → set `VITE_SUPABASE_IMAGE_TRANSFORM=true` and redeploy.

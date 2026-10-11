@@ -79,19 +79,30 @@ alter table public.listings
   add constraint listings_rejection_reason_len
   check (rejection_reason is null or char_length(rejection_reason) <= 500);
 
--- Migrate old statuses → approved, then lock to pending|approved|rejected
+-- Migrate legacy statuses → approved, then lock to pending|approved|rejected
+-- Idempotent: does not re-approve pending/rejected after the first run.
 alter table public.listings drop constraint if exists listings_status_check;
 
 update public.listings
 set status = 'approved'
-where status is distinct from 'approved';
+where status not in ('pending', 'approved', 'rejected');
 
 alter table public.listings
   alter column status set default 'pending';
 
-alter table public.listings
-  add constraint listings_status_check
-  check (status in ('pending', 'approved', 'rejected'));
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'listings_status_check'
+      and conrelid = 'public.listings'::regclass
+  ) then
+    alter table public.listings
+      add constraint listings_status_check
+      check (status in ('pending', 'approved', 'rejected'));
+  end if;
+end $$;
 
 -- Owners cannot change status / rejection_reason; admins can
 create or replace function public.protect_listing_status()
