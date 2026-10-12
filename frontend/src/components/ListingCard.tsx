@@ -2,6 +2,7 @@ import { Bath, BedDouble, Ruler } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../lib/format'
 import type { Listing } from '../lib/types'
+import { HoldBadge } from './HoldBadge'
 import { ListingImage } from './ListingImage'
 import { ListingTypeBadge } from './ListingTypeBadge'
 
@@ -39,8 +40,9 @@ export function ListingCard({ listing, index = 0 }: Props) {
               No photo
             </div>
           )}
-          <div className="absolute left-3 top-3 z-20 sm:left-4 sm:top-4">
+          <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1.5 sm:left-4 sm:top-4">
             <ListingTypeBadge listingType={listing.listing_type} />
+            {listing.hold_status === 'on_hold' ? <HoldBadge /> : null}
           </div>
         </div>
 

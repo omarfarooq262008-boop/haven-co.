@@ -1,16 +1,38 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ListingImage } from '../components/ListingImage'
 import { formatMeetingAt } from '../lib/booking'
+import {
+  cancelHold,
+  formatHoldFee,
+  holdStatusLabel,
+  type HoldStatus,
+} from '../lib/holds'
 import { supabase } from '../lib/supabase'
-import type { Booking } from '../lib/types'
+import type { Booking, HoldRow } from '../lib/types'
+
+type HoldWithBooking = HoldRow & {
+  bookings?: Pick<
+    Booking,
+    'id' | 'meeting_at' | 'visitor_name' | 'visitor_email' | 'visitor_phone' | 'note' | 'status' | 'owner_id'
+  > | null
+  listings?: {
+    id: string
+    title: string
+    city: string
+    address: string
+    image_urls: string[]
+    owner_id: string
+  } | null
+}
 
 export function MyBookingsPage() {
   const { user, loading: authLoading } = useAuth()
   const location = useLocation()
   const justBooked = Boolean((location.state as { booked?: boolean } | null)?.booked)
   const [bookings, setBookings] = useState<Booking[]>([])
+  const [holds, setHolds] = useState<HoldWithBooking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -27,15 +49,30 @@ export function MyBookingsPage() {
       setLoading(true)
       setError(null)
 
-      const { data, error: qError } = await supabase
-        .from('bookings')
-        .select('*, listings(id, title, city, address, image_urls)')
-        .or(`visitor_id.eq.${user.id},owner_id.eq.${user.id}`)
-        .order('meeting_at', { ascending: true })
+      const [bookingsRes, holdsRes] = await Promise.all([
+        supabase
+          .from('bookings')
+          .select('*, listings(id, title, city, address, image_urls, hold_status)')
+          .or(`visitor_id.eq.${user.id},owner_id.eq.${user.id}`)
+          .order('meeting_at', { ascending: true }),
+        supabase
+          .from('holds')
+          .select(
+            '*, bookings(id, meeting_at, visitor_name, visitor_email, visitor_phone, note, status, owner_id), listings(id, title, city, address, image_urls, owner_id)',
+          )
+          .order('created_at', { ascending: false }),
+      ])
 
       if (cancelled) return
-      if (qError) setError(qError.message)
-      else setBookings((data ?? []) as Booking[])
+      if (bookingsRes.error) setError(bookingsRes.error.message)
+      else setBookings((bookingsRes.data ?? []) as Booking[])
+
+      if (holdsRes.error) {
+        // Holds table may not exist until migration is applied
+        console.error('[my-bookings] holds', holdsRes.error.message)
+      } else {
+        setHolds((holdsRes.data ?? []) as HoldWithBooking[])
+      }
       setLoading(false)
     })()
     return () => {
@@ -43,12 +80,59 @@ export function MyBookingsPage() {
     }
   }, [user])
 
+  const holdByBookingId = useMemo(() => {
+    const map = new Map<string, HoldWithBooking>()
+    for (const hold of holds) {
+      map.set(hold.booking_id, hold)
+    }
+    return map
+  }, [holds])
+
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
   if (!user) {
     return <Navigate to="/login" replace state={{ from: '/my-bookings' }} />
   }
 
   async function cancelBooking(booking: Booking) {
+    const hold = holdByBookingId.get(booking.id)
+    const asOwner = booking.owner_id === user!.id
+
+    // Owner cancelling an active/pending hold → refund path via Edge Function
+    if (asOwner && hold && (hold.status === 'active' || hold.status === 'pending_payment')) {
+      if (
+        !window.confirm(
+          hold.status === 'active'
+            ? 'Cancel this hold? The visitor will be refunded and the listing will be freed.'
+            : 'Cancel this unpaid hold? The listing slot will be freed.',
+        )
+      ) {
+        return
+      }
+      setBusyId(booking.id)
+      setError(null)
+      const result = await cancelHold(hold.id)
+      if ('error' in result) {
+        setError(result.error)
+        setBusyId(null)
+        return
+      }
+      setHolds((prev) =>
+        prev.map((item) =>
+          item.id === hold.id
+            ? {
+                ...item,
+                status: hold.status === 'active' ? 'refunded' : 'cancelled',
+              }
+            : item,
+        ),
+      )
+      setBookings((prev) =>
+        prev.map((item) => (item.id === booking.id ? { ...item, status: 'cancelled' } : item)),
+      )
+      setBusyId(null)
+      return
+    }
+
     if (!window.confirm('Cancel this meeting?')) return
     setBusyId(booking.id)
     setError(null)
@@ -73,7 +157,7 @@ export function MyBookingsPage() {
       <div className="glass-panel rounded-2xl px-5 py-4">
         <h1 className="font-display text-3xl font-bold text-ink">My bookings</h1>
         <p className="mt-1 text-sm text-ink-soft">
-          Meetings you requested, and viewings for your listings.
+          Meetings you requested, paid holds, and viewings for your listings.
         </p>
       </div>
 
@@ -102,8 +186,16 @@ export function MyBookingsPage() {
         <ul className="space-y-3">
           {bookings.map((booking) => {
             const listing = booking.listings
+            const hold = holdByBookingId.get(booking.id)
             const asOwner = booking.owner_id === user.id
             const cancelled = booking.status === 'cancelled'
+            const pendingPay = booking.status === 'pending'
+            const canOwnerCancelHold =
+              asOwner &&
+              hold &&
+              (hold.status === 'active' || hold.status === 'pending_payment') &&
+              !cancelled
+
             return (
               <li key={booking.id} className="glass-card flex flex-col gap-4 rounded-2xl p-4 sm:flex-row">
                 <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-line">
@@ -122,11 +214,20 @@ export function MyBookingsPage() {
                       className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
                         cancelled
                           ? 'border-line bg-sand text-ink-soft'
-                          : 'border-emerald-200 bg-emerald-100 text-emerald-900'
+                          : pendingPay
+                            ? 'border-amber-200 bg-amber-100 text-amber-950'
+                            : 'border-emerald-200 bg-emerald-100 text-emerald-900'
                       }`}
                     >
-                      {cancelled ? 'Cancelled' : 'Confirmed'}
+                      {cancelled ? 'Cancelled' : pendingPay ? 'Pending payment' : 'Confirmed'}
                     </span>
+                    {hold ? (
+                      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-950">
+                        {holdStatusLabel(hold.status as HoldStatus)}
+                        {' · '}
+                        {formatHoldFee(hold.amount, hold.currency)}
+                      </span>
+                    ) : null}
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
                       {asOwner ? 'As owner' : 'As visitor'}
                     </span>
@@ -142,6 +243,14 @@ export function MyBookingsPage() {
                     <p className="font-semibold text-ink">Listing unavailable</p>
                   )}
                   <p className="text-sm text-ink-soft">{formatMeetingAt(booking.meeting_at)}</p>
+                  {hold ? (
+                    <p className="text-sm text-ink-soft">
+                      Hold expires {formatMeetingAt(hold.expires_at)}
+                      {hold.status === 'active'
+                        ? ' · Refundable if you (owner) cancel; not if the visitor no-shows'
+                        : null}
+                    </p>
+                  ) : null}
                   {asOwner ? (
                     <p className="text-sm text-ink-soft">
                       Visitor: {booking.visitor_name} · {booking.visitor_email} · {booking.visitor_phone}
@@ -153,7 +262,16 @@ export function MyBookingsPage() {
                   )}
                   {booking.note ? <p className="text-sm text-ink-soft">Note: {booking.note}</p> : null}
                 </div>
-                {!cancelled ? (
+                {canOwnerCancelHold ? (
+                  <button
+                    type="button"
+                    disabled={busyId === booking.id}
+                    onClick={() => void cancelBooking(booking)}
+                    className="btn-anim h-fit rounded-xl border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    {busyId === booking.id ? 'Cancelling…' : 'Cancel hold'}
+                  </button>
+                ) : !cancelled && !hold ? (
                   <button
                     type="button"
                     disabled={busyId === booking.id}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   BOOKING_LIMITS,
@@ -16,11 +16,20 @@ import {
   type BookingFormValues,
 } from '../lib/booking'
 import { friendlyError } from '../lib/errors'
+import {
+  createHoldCheckout,
+  DEFAULT_HOLD_FEE_PKR,
+  fetchHoldFeePkr,
+  formatHoldFee,
+  HOLD_DURATION_HOURS,
+} from '../lib/holds'
 import { supabase } from '../lib/supabase'
 import type { Listing } from '../lib/types'
 
 export function BookMeetingPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+  const holdMode = searchParams.get('hold') === '1' || searchParams.get('mode') === 'hold'
   const { user, profile, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [listing, setListing] = useState<Listing | null>(null)
@@ -31,6 +40,7 @@ export function BookMeetingPage() {
   const [bookedHours, setBookedHours] = useState<Set<number>>(new Set())
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [holdFee, setHoldFee] = useState(DEFAULT_HOLD_FEE_PKR)
 
   useEffect(() => {
     if (!user) return
@@ -42,6 +52,18 @@ export function BookMeetingPage() {
       }),
     )
   }, [user, profile])
+
+  useEffect(() => {
+    if (!holdMode) return
+    let cancelled = false
+    ;(async () => {
+      const fee = await fetchHoldFeePkr()
+      if (!cancelled) setHoldFee(fee)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [holdMode])
 
   useEffect(() => {
     if (!id) return
@@ -84,7 +106,10 @@ export function BookMeetingPage() {
   }, [listing, values.date])
 
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
-  if (!user) return <Navigate to="/login" replace state={{ from: `/listings/${id}/book` }} />
+  if (!user) {
+    const from = holdMode ? `/listings/${id}/book?hold=1` : `/listings/${id}/book`
+    return <Navigate to="/login" replace state={{ from }} />
+  }
   if (loading) return <p className="text-ink-soft">Loading listing…</p>
 
   if (error && !listing) {
@@ -117,6 +142,20 @@ export function BookMeetingPage() {
     )
   }
 
+  const onHold = listing.hold_status === 'on_hold'
+  if (onHold) {
+    return (
+      <div className="space-y-3">
+        <p className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          This property is currently on hold. Booking and new holds are paused until it is free again.
+        </p>
+        <Link to={`/listings/${listing.id}`} className="text-sm text-ink-soft hover:text-ink">
+          ← Back to listing
+        </Link>
+      </div>
+    )
+  }
+
   function update<K extends keyof BookingFormValues>(key: K, value: BookingFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }))
   }
@@ -139,6 +178,23 @@ export function BookMeetingPage() {
 
     setBusy(true)
     try {
+      if (holdMode) {
+        const result = await createHoldCheckout({
+          listingId: listing.id,
+          visitor_name: values.visitor_name.trim(),
+          visitor_email: values.visitor_email.trim(),
+          visitor_phone: values.visitor_phone.trim(),
+          meeting_at: meetingAt.toISOString(),
+          note: values.note.trim(),
+        })
+        if ('error' in result) {
+          throw new Error(friendlyError(result.error, 'Could not start hold checkout'))
+        }
+        // Hosted checkout — never collect cards in our UI
+        window.location.assign(result.checkoutUrl)
+        return
+      }
+
       const { data, error: insertError } = await supabase
         .from('bookings')
         .insert({
@@ -173,7 +229,7 @@ export function BookMeetingPage() {
 
       navigate('/my-bookings', { state: { booked: true } })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not book meeting')
+      setError(err instanceof Error ? err.message : holdMode ? 'Could not start hold' : 'Could not book meeting')
     } finally {
       setBusy(false)
     }
@@ -186,17 +242,57 @@ export function BookMeetingPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <div className="glass-panel rounded-2xl px-5 py-5 md:px-7">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">Schedule a visit</p>
-        <h1 className="mt-1 font-display text-3xl font-bold text-ink md:text-4xl">Book a meeting</h1>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">
+          {holdMode ? 'Secure the property' : 'Schedule a visit'}
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-bold text-ink md:text-4xl">
+          {holdMode ? 'Hold this property' : 'Book a meeting'}
+        </h1>
         <p className="mt-2 text-sm text-ink-soft md:text-base">
           For <span className="font-medium text-ink">{listing.title}</span>
           {listing.address ? ` · ${listing.address}, ${listing.city}` : ` · ${listing.city}`}. Times are
           shown in your local timezone ({localTimezoneLabel()}).
         </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            to={`/listings/${listing.id}/book`}
+            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
+              !holdMode ? 'bg-ink text-sand' : 'border border-line bg-white/60 text-ink'
+            }`}
+          >
+            Book a meeting
+          </Link>
+          <Link
+            to={`/listings/${listing.id}/book?hold=1`}
+            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
+              holdMode ? 'bg-ink text-sand' : 'border border-line bg-white/60 text-ink'
+            }`}
+          >
+            Hold this property
+          </Link>
+        </div>
         <Link to={`/listings/${listing.id}`} className="mt-3 inline-block text-sm text-ink-soft hover:text-ink">
           ← Back to listing
         </Link>
       </div>
+
+      {holdMode ? (
+        <div className="glass-panel space-y-2 rounded-2xl border border-amber-200/80 bg-amber-50/60 px-5 py-4 text-sm text-amber-950">
+          <p>
+            <strong>Hold fee:</strong> {formatHoldFee(holdFee)} — paid to the platform through a secure
+            checkout page (you will leave this site briefly). We never ask for card details on Haven &amp; Co.
+          </p>
+          <p>
+            The hold lasts <strong>{HOLD_DURATION_HOURS} hours</strong> or until your meeting time, whichever
+            comes first.
+          </p>
+          <p>
+            <strong>Refunds:</strong> fully refundable if the owner cancels or declines. Not refundable if you
+            do not show up for the meeting.
+          </p>
+          <p>Your meeting is only confirmed after payment succeeds.</p>
+        </div>
+      ) : null}
 
       <form className="listing-form glass-panel space-y-5 overflow-hidden rounded-2xl p-5 md:p-7" onSubmit={handleSubmit} noValidate>
         <div className="form-grid-2">
@@ -299,9 +395,19 @@ export function BookMeetingPage() {
             disabled={busy}
             className="btn-anim rounded-xl bg-ink px-6 py-3 font-semibold text-sand disabled:opacity-60"
           >
-            {busy ? 'Booking…' : 'Confirm meeting'}
+            {busy
+              ? holdMode
+                ? 'Redirecting…'
+                : 'Booking…'
+              : holdMode
+                ? `Pay and book (${formatHoldFee(holdFee)})`
+                : 'Confirm meeting'}
           </button>
-          <p className="text-xs text-ink-soft">You’ll get a confirmation email after booking.</p>
+          <p className="text-xs text-ink-soft">
+            {holdMode
+              ? 'You will complete payment on the provider’s secure page.'
+              : 'You’ll get a confirmation email after booking.'}
+          </p>
         </div>
       </form>
     </div>

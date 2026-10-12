@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { HoldBadge } from '../components/HoldBadge'
 import { ListingImage } from '../components/ListingImage'
 import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { ListingTypeBadge } from '../components/ListingTypeBadge'
@@ -79,6 +80,7 @@ export function ListingDetailPage() {
 
   const photos = listing.image_urls?.length ? listing.image_urls : []
   const isOwner = user?.id === listing.owner_id
+  const onHold = listing.hold_status === 'on_hold'
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
@@ -126,10 +128,22 @@ export function ListingDetailPage() {
         </Link>
         <div className="flex flex-wrap items-center gap-2">
           <ListingTypeBadge listingType={listing.listing_type} />
+          {onHold ? <HoldBadge /> : null}
           {isOwner || listing.status !== 'approved' ? (
             <ListingStatusBadge status={listing.status} />
           ) : null}
         </div>
+        {onHold && !isOwner ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            This property is on hold. New meetings and holds are unavailable until it is free.
+          </p>
+        ) : null}
+        {onHold && isOwner ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            This property is on hold for a paid viewing. Cancel the hold from My bookings if you need to
+            free it (the visitor is refunded).
+          </p>
+        ) : null}
         {isOwner && listing.status === 'pending' ? (
           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
             Your listing is under review
@@ -195,13 +209,15 @@ export function ListingDetailPage() {
         ) : (
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap gap-2">
-              <Link
-                to={user ? `/listings/${listing.id}/book` : '/login'}
-                state={user ? undefined : { from: `/listings/${listing.id}/book` }}
-                className="btn-anim rounded-xl bg-gold px-5 py-3 font-semibold text-ink hover:bg-gold-dark"
-              >
-                Book a meeting
-              </Link>
+              {!onHold ? (
+                <Link
+                  to={user ? `/listings/${listing.id}/book` : '/login'}
+                  state={user ? undefined : { from: `/listings/${listing.id}/book` }}
+                  className="btn-anim rounded-xl bg-gold px-5 py-3 font-semibold text-ink hover:bg-gold-dark"
+                >
+                  Book a meeting
+                </Link>
+              ) : null}
               <button
                 type="button"
                 disabled={busy}
@@ -211,14 +227,15 @@ export function ListingDetailPage() {
                 {busy ? 'Opening chat…' : 'Message owner'}
               </button>
             </div>
-            <button
-              type="button"
-              disabled
-              title="Coming soon"
-              className="rounded-xl border border-dashed border-line px-5 py-3 text-left text-sm font-semibold text-ink-soft opacity-70"
-            >
-              Hold this property <span className="font-normal">(Coming soon)</span>
-            </button>
+            {!onHold ? (
+              <Link
+                to={user ? `/listings/${listing.id}/book?hold=1` : '/login'}
+                state={user ? undefined : { from: `/listings/${listing.id}/book?hold=1` }}
+                className="btn-anim rounded-xl border border-ink/20 bg-white/80 px-5 py-3 text-left text-sm font-semibold text-ink hover:bg-sand"
+              >
+                Hold this property
+              </Link>
+            ) : null}
           </div>
         )}
       </div>

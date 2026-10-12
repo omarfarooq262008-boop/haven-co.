@@ -703,3 +703,10 @@ $$;
 
 revoke all on function public.check_edge_rate_limit(text, int, int) from public;
 grant execute on function public.check_edge_rate_limit(text, int, int) to service_role;
+
+
+-- ---------------------------------------------------------------------------
+-- 8) migration_holds.sql — run separately if this file was already applied
+--    Paste supabase/migration_holds.sql in the SQL Editor (safe to re-run).
+-- ---------------------------------------------------------------------------
+

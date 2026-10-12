@@ -12,5 +12,6 @@ Do not skip `schema.sql` on a brand-new project. If the schema is already applie
 | 5 | `migration_bookings.sql` | `bookings` table, slot uniqueness, booking RLS, and booked-slots RPC. |
 | 6 | `migration_message_email.sql` | Message-email cooldown table + claim function for `notify-new-message`. |
 | 7 | `migration_rate_limits.sql` | DB rate limits for listings/messages/bookings + edge rate-limit buckets. |
+| 8 | `migration_holds.sql` | Paid holds: `holds` table, `hold_status`, fee config, booking `pending`, `expire_holds` + pg_cron. |
 
-**Shortcut:** after `schema.sql`, paste `all_migrations_in_order.sql` once (files 2–7 combined, idempotent).
+**Shortcut:** after `schema.sql`, paste `all_migrations_in_order.sql` once (files 2–7 combined, idempotent), then run `migration_holds.sql`.

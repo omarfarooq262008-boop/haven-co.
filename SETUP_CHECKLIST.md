@@ -15,9 +15,11 @@
 - `GMAIL_APP_PASSWORD` (16-char Google App Password; required with `GMAIL_USER`)
 - `RESEND_API_KEY` (used when Gmail secrets are not set)
 - `RESEND_FROM_EMAIL` (Resend from address; optional display name when using Gmail)
-- `APP_URL` (public site URL, no trailing slash — used in email links)
+- `APP_URL` (public site URL, no trailing slash — used in email links and payment return URLs)
 - `MESSAGE_NOTIFY_WEBHOOK_SECRET`
 - `LISTING_REVIEW_WEBHOOK_SECRET`
+- `PAYMENT_PROVIDER` (`mock` for testing; later `safepay` | `payfast` | `paymob`)
+- `PAYMENT_WEBHOOK_SECRET` (HMAC secret for mock / real provider webhooks)
 
 (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to Edge Functions.)
 
@@ -31,7 +33,8 @@
 
 1. Run `supabase/schema.sql` (new project) or confirm schema already exists.
 2. Run `supabase/all_migrations_in_order.sql` (or follow `supabase/RUN_ORDER.md`).
-3. Promote yourself to admin (SQL Editor):
+3. Run `supabase/migration_holds.sql` (paid holds — safe to re-run).
+4. Promote yourself to admin (SQL Editor):
 
    ```sql
    update public.profiles
@@ -104,7 +107,29 @@ npx supabase functions deploy notify-new-message --use-api
 npx supabase functions deploy notify-listing-review --use-api
 ```
 
-### 7. Optional
+### 7. Paid holds (mock payment)
+
+1. Confirm `migration_holds.sql` has been run (creates `holds`, `hold_status`, fee config, cron).
+2. Change the fee anytime in SQL: `update platform_config set value = '5000' where key = 'hold_fee_pkr';`
+3. Set payment secrets:
+
+   ```bash
+   npx supabase secrets set PAYMENT_PROVIDER=mock
+   npx supabase secrets set PAYMENT_WEBHOOK_SECRET=choose-a-long-random-string
+   npx supabase secrets set APP_URL=https://your-frontend.example
+   ```
+
+4. Deploy hold functions:
+
+   ```bash
+   npx supabase functions deploy create-hold-checkout --use-api
+   npx supabase functions deploy payment-webhook --use-api
+   npx supabase functions deploy cancel-hold --use-api
+   ```
+
+5. Test with mock: open a listing → **Hold this property** → fill the meeting form → **Pay and book** → on the mock checkout page choose **Pay successfully** → land on `/payment/result?status=success` → confirm hold in **My bookings**. Owner can **Cancel hold** to refund and free the listing.
+
+### 8. Optional
 
 - **Sentry:** create a React project, copy the DSN into `VITE_SENTRY_DSN` (Vercel + local `.env`), redeploy.
 - **Image transforms:** Supabase Pro+ → Storage → enable Image Transformations → set `VITE_SUPABASE_IMAGE_TRANSFORM=true` and redeploy.

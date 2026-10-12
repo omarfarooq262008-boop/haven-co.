@@ -10,3 +10,13 @@ verify_jwt = false
 
 [functions.notify-listing-review]
 verify_jwt = false
+
+[functions.create-hold-checkout]
+verify_jwt = true
+
+# Provider (or mock checkout) posts here — signature verified in code, not JWT.
+[functions.payment-webhook]
+verify_jwt = false
+
+[functions.cancel-hold]
+verify_jwt = true

@@ -1,6 +1,7 @@
 export type PropertyType = 'apartment' | 'villa' | 'townhouse' | 'commercial' | 'other'
 export type ListingType = 'sale' | 'rent'
 export type ListingStatus = 'pending' | 'approved' | 'rejected'
+export type ListingHoldStatus = 'none' | 'on_hold'
 export type MarketSection = 'buy' | 'rent'
 
 export type Profile = {
@@ -26,6 +27,7 @@ export type Listing = {
   area_sqft: number | null
   image_urls: string[]
   status: ListingStatus
+  hold_status?: ListingHoldStatus
   rejection_reason?: string | null
   created_at: string
 }
@@ -49,7 +51,7 @@ export type Message = {
   created_at: string
 }
 
-export type BookingStatus = 'confirmed' | 'cancelled'
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled'
 
 export type Booking = {
   id: string
@@ -63,5 +65,19 @@ export type Booking = {
   note: string
   status: BookingStatus
   created_at: string
-  listings?: Pick<Listing, 'id' | 'title' | 'city' | 'address' | 'image_urls'> | null
+  listings?: Pick<Listing, 'id' | 'title' | 'city' | 'address' | 'image_urls' | 'hold_status'> | null
+}
+
+export type HoldRow = {
+  id: string
+  listing_id: string
+  booking_id: string
+  visitor_id: string
+  amount: number
+  currency: string
+  status: 'pending_payment' | 'active' | 'expired' | 'refunded' | 'cancelled'
+  provider: string
+  provider_reference: string | null
+  expires_at: string
+  created_at: string
 }
