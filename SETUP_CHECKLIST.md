@@ -11,13 +11,17 @@
 
 ### Supabase Edge Function secrets (`supabase secrets set …`)
 
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL`
+- `GMAIL_USER` (optional Gmail SMTP fallback — full address, e.g. `you@gmail.com`)
+- `GMAIL_APP_PASSWORD` (16-char Google App Password; required with `GMAIL_USER`)
+- `RESEND_API_KEY` (used when Gmail secrets are not set)
+- `RESEND_FROM_EMAIL` (Resend from address; optional display name when using Gmail)
 - `APP_URL` (public site URL, no trailing slash — used in email links)
 - `MESSAGE_NOTIFY_WEBHOOK_SECRET`
 - `LISTING_REVIEW_WEBHOOK_SECRET`
 
 (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to Edge Functions.)
+
+**Email provider:** if both `GMAIL_USER` and `GMAIL_APP_PASSWORD` are set, Edge Functions send via Gmail SMTP (`smtp.gmail.com:465`). Otherwise they use Resend. Never put these values in frontend env.
 
 ---
 
@@ -71,12 +75,34 @@
 3. Enable **IP address forwarding** if the app is behind Vercel/Cloudflare.
 4. Suggested starting points are documented in the Auth rate-limits guide; keep built-in email at 2/hour unless custom SMTP is configured.
 
-### 6. Resend domain
+### 6. Email sending (Gmail fallback or Resend)
+
+**Option A — Gmail SMTP (works without a verified Resend domain)**
+
+1. Enable 2FA on the Google account, then create an [App Password](https://myaccount.google.com/apppasswords).
+2. Set secrets (Edge only — not Vercel / `.env`):
+
+   ```bash
+   npx supabase secrets set GMAIL_USER=you@gmail.com
+   npx supabase secrets set GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+   ```
+
+3. Redeploy the three email functions (see below).
+
+**Option B — Resend (preferred once a domain is verified)**
 
 1. Create a Resend API key; store it as `RESEND_API_KEY`.
 2. Verify your sending domain in Resend (DNS: SPF, DKIM, DMARC as required).
 3. Set `RESEND_FROM_EMAIL` to an address on that verified domain.
-4. Until the domain is verified, Resend only allows sending to your own account email.
+4. Until the domain is verified, Resend only allows sending to your own account email — use Gmail secrets as fallback instead.
+
+**Redeploy email functions** (no Docker; `--use-api`):
+
+```bash
+npx supabase functions deploy send-booking-email --use-api
+npx supabase functions deploy notify-new-message --use-api
+npx supabase functions deploy notify-listing-review --use-api
+```
 
 ### 7. Optional
 

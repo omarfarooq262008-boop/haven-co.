@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
+import { isEmailConfigured, sendEmail } from "../_shared/sendEmail.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,15 +35,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const resendKey = Deno.env.get("RESEND_API_KEY")
-    const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")
 
-    if (!resendKey || !fromEmail || !supabaseUrl || !serviceRoleKey || !anonKey) {
-      console.error("[send-booking-email] Missing secrets")
-      return json({ error: "Email service is not configured" }, 500)
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+      console.error("[send-booking-email] Missing Supabase secrets")
+      return json({ error: "Service is not configured" }, 500)
+    }
+
+    if (!isEmailConfigured()) {
+      console.error("[send-booking-email] No email provider configured (Gmail or Resend)")
+      // Booking already saved — do not block the client on missing email config
+      return json({ ok: true, emailed: false, skipped: "email_not_configured" })
     }
 
     const authHeader = req.headers.get("Authorization")
@@ -123,7 +128,7 @@ Deno.serve(async (req) => {
     const { data: ownerData, error: ownerError } = await admin.auth.admin.getUserById(row.owner_id)
     if (ownerError || !ownerData.user?.email) {
       console.error("[send-booking-email] owner email", ownerError?.message)
-      return json({ error: "Owner email not found" }, 500)
+      return json({ ok: true, emailed: false, skipped: "owner_email_missing" })
     }
     const ownerEmail = ownerData.user.email
 
@@ -137,6 +142,13 @@ Deno.serve(async (req) => {
       }`,
     })
     const icsBase64 = utf8ToBase64(ics)
+    const attachments = [
+      {
+        filename: "viewing.ics",
+        content: icsBase64,
+        contentType: "text/calendar; charset=utf-8; method=REQUEST",
+      },
+    ]
 
     const visitorHtml = emailHtml({
       heading: "Your viewing is confirmed",
@@ -157,43 +169,43 @@ Deno.serve(async (req) => {
       footer: "A calendar invite is attached.",
     })
 
-    const visitorResult = await sendResend({
-      apiKey: resendKey,
-      from: fromEmail,
+    const visitorResult = await sendEmail({
       to: row.visitor_email,
       subject: `Viewing confirmed: ${listingRow.title}`,
       html: visitorHtml,
-      icsBase64,
+      attachments,
     })
 
-    const ownerResult = await sendResend({
-      apiKey: resendKey,
-      from: fromEmail,
+    const ownerResult = await sendEmail({
       to: ownerEmail,
       subject: `New viewing: ${listingRow.title}`,
       html: ownerHtml,
-      icsBase64,
+      attachments,
     })
 
     if (!visitorResult.ok || !ownerResult.ok) {
-      console.error("[send-booking-email] Resend errors", {
+      console.error("[send-booking-email] send errors", {
         visitor: visitorResult,
         owner: ownerResult,
       })
-      return json(
-        {
-          ok: false,
-          visitor: visitorResult,
-          owner: ownerResult,
-        },
-        502,
-      )
+      // Never block the booking on email failure
+      return json({
+        ok: true,
+        emailed: false,
+        visitor: visitorResult,
+        owner: ownerResult,
+      })
     }
 
-    return json({ ok: true })
+    return json({ ok: true, emailed: true })
   } catch (err) {
     console.error("[send-booking-email]", err)
-    return json({ error: err instanceof Error ? err.message : "Unexpected error" }, 500)
+    // Soft-fail so the client does not treat email issues as a booking failure
+    return json({
+      ok: true,
+      emailed: false,
+      error: err instanceof Error ? err.message : "Unexpected error",
+    })
   }
 })
 
@@ -297,47 +309,4 @@ function buildIcs(opts: {
     "END:VCALENDAR",
   ]
   return lines.join("\r\n") + "\r\n"
-}
-
-async function sendResend(opts: {
-  apiKey: string
-  from: string
-  to: string
-  subject: string
-  html: string
-  icsBase64: string
-}) {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: opts.from,
-      to: [opts.to],
-      subject: opts.subject,
-      html: opts.html,
-      attachments: [
-        {
-          filename: "viewing.ics",
-          content: opts.icsBase64,
-          content_type: "text/calendar; charset=utf-8; method=REQUEST",
-        },
-      ],
-    }),
-  })
-
-  const text = await res.text()
-  let parsed: unknown = text
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    /* keep text */
-  }
-
-  if (!res.ok) {
-    return { ok: false as const, status: res.status, body: parsed }
-  }
-  return { ok: true as const, status: res.status, body: parsed }
 }

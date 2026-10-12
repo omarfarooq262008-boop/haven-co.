@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
+import { isEmailConfigured, sendEmail } from "../_shared/sendEmail.ts"
 
 type ListingRecord = {
   id?: string
@@ -27,15 +28,18 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const resendKey = Deno.env.get("RESEND_API_KEY")
-    const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     const webhookSecret = Deno.env.get("LISTING_REVIEW_WEBHOOK_SECRET")
     const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "")
 
-    if (!resendKey || !fromEmail || !supabaseUrl || !serviceRoleKey) {
-      console.error("[notify-listing-review] Missing Resend or Supabase secrets")
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[notify-listing-review] Missing Supabase secrets")
+      return json({ ok: true, skipped: "supabase_not_configured" })
+    }
+
+    if (!isEmailConfigured()) {
+      console.error("[notify-listing-review] No email provider configured (Gmail or Resend)")
       // Do not fail the listing write path; webhook is already post-commit.
       return json({ ok: true, skipped: "email_not_configured" })
     }
@@ -90,8 +94,6 @@ Deno.serve(async (req) => {
       }
       const result = await emailAdminsNewListing({
         admin,
-        resendKey,
-        fromEmail,
         appUrl,
         listing: record,
       })
@@ -109,8 +111,6 @@ Deno.serve(async (req) => {
       }
       const result = await emailOwnerReviewResult({
         admin,
-        resendKey,
-        fromEmail,
         appUrl,
         listing: record,
         decision: newStatus,
@@ -132,8 +132,6 @@ Deno.serve(async (req) => {
 
 async function emailAdminsNewListing(opts: {
   admin: SupabaseClient
-  resendKey: string
-  fromEmail: string
   appUrl: string
   listing: ListingRecord
 }) {
@@ -188,14 +186,13 @@ async function emailAdminsNewListing(opts: {
       console.error("[notify-listing-review] admin email missing", row.id, userError?.message)
       continue
     }
-    const sent = await sendResend({
-      apiKey: opts.resendKey,
-      from: opts.fromEmail,
+    const result = await sendEmail({
       to: authUser.user.email,
       subject: `Review listing: ${title}`,
       html,
     })
-    if (sent) emailed += 1
+    if (result.ok) emailed += 1
+    else console.error("[notify-listing-review] admin send failed", result)
   }
 
   return { emailed, kind: "admin_pending" }
@@ -203,8 +200,6 @@ async function emailAdminsNewListing(opts: {
 
 async function emailOwnerReviewResult(opts: {
   admin: SupabaseClient
-  resendKey: string
-  fromEmail: string
   appUrl: string
   listing: ListingRecord
   decision: "approved" | "rejected"
@@ -248,48 +243,16 @@ async function emailOwnerReviewResult(opts: {
     })
   }
 
-  const sent = await sendResend({
-    apiKey: opts.resendKey,
-    from: opts.fromEmail,
+  const result = await sendEmail({
     to: ownerAuth.user.email,
     subject,
     html,
   })
-
-  return { emailed: sent ? 1 : 0, kind: opts.decision }
-}
-
-async function sendResend(opts: {
-  apiKey: string
-  from: string
-  to: string
-  subject: string
-  html: string
-}): Promise<boolean> {
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: opts.from,
-        to: [opts.to],
-        subject: opts.subject,
-        html: opts.html,
-      }),
-    })
-    const text = await res.text()
-    if (!res.ok) {
-      console.error("[notify-listing-review] Resend error", res.status, text)
-      return false
-    }
-    return true
-  } catch (err) {
-    console.error("[notify-listing-review] Resend request failed", err)
-    return false
+  if (!result.ok) {
+    console.error("[notify-listing-review] owner send failed", result)
   }
+
+  return { emailed: result.ok ? 1 : 0, kind: opts.decision }
 }
 
 function emailShell(opts: { heading: string; body: string }) {

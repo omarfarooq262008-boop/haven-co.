@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
+import { isEmailConfigured, sendEmail } from "../_shared/sendEmail.ts"
 
 type WebhookPayload = {
   type?: string
@@ -21,21 +22,24 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const resendKey = Deno.env.get("RESEND_API_KEY")
-    const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     const webhookSecret = Deno.env.get("MESSAGE_NOTIFY_WEBHOOK_SECRET")
     const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "")
 
-    if (!resendKey || !fromEmail || !supabaseUrl || !serviceRoleKey) {
-      console.error("[notify-new-message] Missing Resend or Supabase secrets")
-      return json({ error: "Email service is not configured" }, 500)
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[notify-new-message] Missing Supabase secrets")
+      return json({ ok: true, skipped: "supabase_not_configured" })
+    }
+
+    if (!isEmailConfigured()) {
+      console.error("[notify-new-message] No email provider configured (Gmail or Resend)")
+      return json({ ok: true, skipped: "email_not_configured" })
     }
 
     if (!webhookSecret) {
       console.error("[notify-new-message] MESSAGE_NOTIFY_WEBHOOK_SECRET is not set")
-      return json({ error: "Webhook secret is not configured" }, 500)
+      return json({ ok: true, skipped: "webhook_secret_missing" })
     }
 
     const provided =
@@ -55,7 +59,7 @@ Deno.serve(async (req) => {
 
     const record = payload.record
     if (!record?.id || !record.conversation_id || !record.sender_id || !record.body) {
-      return json({ error: "Invalid message payload" }, 400)
+      return json({ ok: true, skipped: "invalid_message_payload" })
     }
 
     const limited = await enforceEdgeRateLimits({
@@ -70,7 +74,7 @@ Deno.serve(async (req) => {
       userWindowSeconds: 3600,
     })
     if (!limited.ok) {
-      return json({ error: limited.message, skipped: "rate_limit" }, limited.status)
+      return json({ ok: true, skipped: "rate_limit" })
     }
 
     const { data: conversation, error: convError } = await admin
@@ -81,7 +85,7 @@ Deno.serve(async (req) => {
 
     if (convError || !conversation) {
       console.error("[notify-new-message] conversation", convError?.message)
-      return json({ error: "Conversation not found" }, 404)
+      return json({ ok: true, skipped: "conversation_not_found" })
     }
 
     const recipientId =
@@ -103,7 +107,7 @@ Deno.serve(async (req) => {
 
     if (claimError) {
       console.error("[notify-new-message] cooldown claim", claimError.message)
-      return json({ error: "Cooldown check failed" }, 500)
+      return json({ ok: true, skipped: "cooldown_check_failed" })
     }
 
     if (!claimed) {
@@ -153,32 +157,27 @@ Deno.serve(async (req) => {
   <p style="color:#a8a29e;font-size:12px">You won’t get another email for this chat for 15 minutes.</p>
 </body></html>`
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: [recipientEmail],
-        subject: `New message about ${listingTitle}`,
-        html,
-      }),
+    const result = await sendEmail({
+      to: recipientEmail,
+      subject: `New message about ${listingTitle}`,
+      html,
     })
 
-    const text = await res.text()
-    if (!res.ok) {
-      console.error("[notify-new-message] Resend error", res.status, text)
+    if (!result.ok) {
+      console.error("[notify-new-message] send error", result)
       // Let the next message retry sooner after a send failure
       await admin.from("message_email_cooldowns").delete().eq("conversation_id", conversation.id)
-      return json({ error: "Failed to send email", detail: text }, 502)
+      return json({ ok: true, emailed: false, error: result.error })
     }
 
     return json({ ok: true, emailed: recipientEmail })
   } catch (err) {
     console.error("[notify-new-message]", err)
-    return json({ error: err instanceof Error ? err.message : "Unexpected error" }, 500)
+    return json({
+      ok: true,
+      skipped: "unexpected_error",
+      error: err instanceof Error ? err.message : "Unexpected error",
+    })
   }
 })
 

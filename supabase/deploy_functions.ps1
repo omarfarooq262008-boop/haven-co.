@@ -27,8 +27,8 @@ Write-Host ""
 
 foreach ($dir in $dirs) {
   $name = $dir.Name
-  Write-Host "==> supabase functions deploy $name" -ForegroundColor Cyan
-  & supabase functions deploy $name
+  Write-Host "==> npx supabase functions deploy $name --use-api" -ForegroundColor Cyan
+  & npx supabase functions deploy $name --use-api
   if ($LASTEXITCODE -ne 0) {
     Write-Error "Deploy failed for '$name' (exit $LASTEXITCODE). Stopping."
   }
