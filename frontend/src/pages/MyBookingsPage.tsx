@@ -9,6 +9,7 @@ import {
   holdStatusLabel,
   type HoldStatus,
 } from '../lib/holds'
+import { hasMoreRows, PAGE_SIZE, rangeForPage } from '../lib/pagination'
 import { supabase } from '../lib/supabase'
 import type { Booking, HoldRow } from '../lib/types'
 
@@ -34,6 +35,9 @@ export function MyBookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [holds, setHolds] = useState<HoldWithBooking[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showBookedNotice, setShowBookedNotice] = useState(justBooked)
@@ -45,40 +49,60 @@ export function MyBookingsPage() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
+    const isFirstPage = page === 0
     ;(async () => {
-      setLoading(true)
+      if (isFirstPage) setLoading(true)
+      else setLoadingMore(true)
       setError(null)
 
-      const [bookingsRes, holdsRes] = await Promise.all([
-        supabase
-          .from('bookings')
-          .select('*, listings(id, title, city, address, image_urls, hold_status)')
-          .or(`visitor_id.eq.${user.id},owner_id.eq.${user.id}`)
-          .order('meeting_at', { ascending: true }),
-        supabase
+      const { from, to } = rangeForPage(page, PAGE_SIZE.bookings)
+      const bookingsRes = await supabase
+        .from('bookings')
+        .select('*, listings(id, title, city, address, image_urls, hold_status)')
+        .or(`visitor_id.eq.${user.id},owner_id.eq.${user.id}`)
+        .order('meeting_at', { ascending: true })
+        .range(from, to)
+
+      if (cancelled) return
+      if (bookingsRes.error) {
+        setError(bookingsRes.error.message)
+        setLoading(false)
+        setLoadingMore(false)
+        return
+      }
+
+      const rows = (bookingsRes.data ?? []) as Booking[]
+      setBookings((prev) => (isFirstPage ? rows : [...prev, ...rows]))
+      setHasMore(hasMoreRows(rows.length, PAGE_SIZE.bookings))
+
+      const bookingIds = rows.map((b) => b.id)
+      if (bookingIds.length > 0) {
+        const holdsRes = await supabase
           .from('holds')
           .select(
             '*, bookings(id, meeting_at, visitor_name, visitor_email, visitor_phone, note, status, owner_id), listings(id, title, city, address, image_urls, owner_id)',
           )
-          .order('created_at', { ascending: false }),
-      ])
+          .in('booking_id', bookingIds)
+          .order('created_at', { ascending: false })
 
-      if (cancelled) return
-      if (bookingsRes.error) setError(bookingsRes.error.message)
-      else setBookings((bookingsRes.data ?? []) as Booking[])
-
-      if (holdsRes.error) {
-        // Holds table may not exist until migration is applied
-        console.error('[my-bookings] holds', holdsRes.error.message)
-      } else {
-        setHolds((holdsRes.data ?? []) as HoldWithBooking[])
+        if (cancelled) return
+        if (holdsRes.error) {
+          // Holds table may not exist until migration is applied
+          console.error('[my-bookings] holds', holdsRes.error.message)
+        } else {
+          const nextHolds = (holdsRes.data ?? []) as HoldWithBooking[]
+          setHolds((prev) => (isFirstPage ? nextHolds : [...prev, ...nextHolds]))
+        }
+      } else if (isFirstPage) {
+        setHolds([])
       }
       setLoading(false)
+      setLoadingMore(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [user])
+  }, [user, page])
 
   const holdByBookingId = useMemo(() => {
     const map = new Map<string, HoldWithBooking>()
@@ -183,6 +207,7 @@ export function MyBookingsPage() {
       ) : bookings.length === 0 ? (
         <p className="text-ink-soft">No bookings yet.</p>
       ) : (
+        <>
         <ul className="space-y-3">
           {bookings.map((booking) => {
             const listing = booking.listings
@@ -285,6 +310,19 @@ export function MyBookingsPage() {
             )
           })}
         </ul>
+        {hasMore ? (
+          <div className="flex justify-center pt-2">
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={() => setPage((p) => p + 1)}
+              className="btn-anim rounded-xl border border-line px-5 py-2 text-sm font-semibold text-ink hover:bg-sand disabled:opacity-60"
+            >
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          </div>
+        ) : null}
+        </>
       )}
     </div>
   )

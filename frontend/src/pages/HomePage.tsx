@@ -10,6 +10,7 @@ import {
   sectionFromSearch,
   validatePriceFilters,
 } from '../lib/marketFilters'
+import { hasMoreRows, PAGE_SIZE, rangeForPage } from '../lib/pagination'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Listing, MarketSection, PropertyType } from '../lib/types'
 
@@ -37,7 +38,15 @@ export function HomePage() {
   const [applied, setApplied] = useState<Filters>(emptyFilters)
   const [filterError, setFilterError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPage(0)
+    setListings([])
+  }, [applied, listingType])
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -47,8 +56,13 @@ export function HomePage() {
     }
 
     let cancelled = false
+    const isFirstPage = page === 0
     ;(async () => {
-      setLoading(true)
+      if (isFirstPage) {
+        setLoading(true)
+      } else {
+        setLoadingMore(true)
+      }
       setError(null)
 
       let query = supabase
@@ -63,17 +77,24 @@ export function HomePage() {
       if (applied.minPrice.trim()) query = query.gte('price', Number(applied.minPrice))
       if (applied.maxPrice.trim()) query = query.lte('price', Number(applied.maxPrice))
 
-      const { data, error: qError } = await query
+      const { from, to } = rangeForPage(page, PAGE_SIZE.listings)
+      const { data, error: qError } = await query.range(from, to)
       if (cancelled) return
-      if (qError) setError(qError.message)
-      else setListings((data ?? []) as Listing[])
+      if (qError) {
+        setError(qError.message)
+      } else {
+        const rows = (data ?? []) as Listing[]
+        setListings((prev) => (isFirstPage ? rows : [...prev, ...rows]))
+        setHasMore(hasMoreRows(rows.length, PAGE_SIZE.listings))
+      }
       setLoading(false)
+      setLoadingMore(false)
     })()
 
     return () => {
       cancelled = true
     }
-  }, [applied, listingType])
+  }, [applied, listingType, page])
 
   function setSection(next: MarketSection) {
     const nextParams = new URLSearchParams(searchParams)
@@ -235,11 +256,25 @@ export function HomePage() {
             {hasFilters ? emptyWithFilters : emptyMessage}
           </p>
         ) : (
-          <div className="listings-grid">
-            {listings.map((listing, i) => (
-              <ListingCard key={listing.id} listing={listing} index={i} />
-            ))}
-          </div>
+          <>
+            <div className="listings-grid">
+              {listings.map((listing, i) => (
+                <ListingCard key={listing.id} listing={listing} index={i} />
+              ))}
+            </div>
+            {hasMore ? (
+              <div className="mt-8 flex justify-center">
+                <button
+                  type="button"
+                  disabled={loadingMore}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="btn-anim rounded-xl border border-line bg-white/80 px-6 py-3 text-sm font-semibold text-ink hover:bg-sand disabled:opacity-60"
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>

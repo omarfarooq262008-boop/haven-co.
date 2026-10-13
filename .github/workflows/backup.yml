@@ -1,0 +1,98 @@
+name: Weekly database backup
+
+# Exports Postgres via pg_dump and Storage object metadata (not binary files)
+# to a private GitHub Actions artifact. Requires repo secret DATABASE_URL
+# (Supabase → Project Settings → Database → Connection string → URI,
+# use the "Session mode" or direct connection with the DB password).
+
+on:
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-db-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  backup:
+    name: pg_dump + storage metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Export database and storage metadata
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret is not set. Add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          OUT="backup-${STAMP}"
+          mkdir -p "$OUT"
+
+          echo "Running pg_dump (custom format)…"
+          # Prefer SSL; strip query params that confuse older clients if needed
+          pg_dump "$DATABASE_URL" \
+            --format=custom \
+            --no-owner \
+            --no-acl \
+            --file="$OUT/haven-co.dump"
+
+          echo "Exporting storage.objects metadata (paths, buckets, sizes)…"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "\
+            COPY (
+              SELECT bucket_id, name, id, owner, created_at, updated_at,
+                     last_accessed_at, metadata
+              FROM storage.objects
+              ORDER BY bucket_id, name
+            ) TO STDOUT WITH CSV HEADER" > "$OUT/storage-objects.csv" \
+            || echo "bucket_id,name,id,owner,created_at,updated_at,last_accessed_at,metadata" > "$OUT/storage-objects.csv"
+
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "\
+            COPY (
+              SELECT id, name, public, created_at, updated_at
+              FROM storage.buckets
+              ORDER BY name
+            ) TO STDOUT WITH CSV HEADER" > "$OUT/storage-buckets.csv" \
+            || echo "id,name,public,created_at,updated_at" > "$OUT/storage-buckets.csv"
+
+          cat > "$OUT/README.txt" <<EOF
+          Haven & Co backup — ${STAMP}
+          Contents:
+            haven-co.dump       Postgres custom-format dump (pg_restore)
+            storage-buckets.csv Storage bucket registry
+            storage-objects.csv Object paths/metadata (not file bytes)
+
+          Restore instructions: docs/RUNBOOK.md (Database restore from artifact)
+          EOF
+
+          tar -czf "haven-co-backup-${STAMP}.tar.gz" "$OUT"
+          echo "ARCHIVE=haven-co-backup-${STAMP}.tar.gz" >> "$GITHUB_ENV"
+          ls -lh "haven-co-backup-${STAMP}.tar.gz"
+
+      - name: Upload private artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: haven-co-db-backup
+          path: ${{ env.ARCHIVE }}
+          # Retention: keep weekly dumps ~90 days (GitHub max depends on plan)
+          retention-days: 90
+          if-no-files-found: error

@@ -6,6 +6,7 @@ import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { ListingTypeBadge } from '../components/ListingTypeBadge'
 import { formatListingPrice } from '../lib/format'
 import { deleteListingImages } from '../lib/listingImages'
+import { hasMoreRows, PAGE_SIZE, rangeForPage } from '../lib/pagination'
 import { supabase } from '../lib/supabase'
 import type { Listing } from '../lib/types'
 
@@ -15,6 +16,9 @@ export function MyListingsPage() {
   const underReview = Boolean((location.state as { underReview?: boolean } | null)?.underReview)
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [showReviewNotice, setShowReviewNotice] = useState(underReview)
@@ -26,23 +30,32 @@ export function MyListingsPage() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
+    const isFirstPage = page === 0
     ;(async () => {
-      setLoading(true)
+      if (isFirstPage) setLoading(true)
+      else setLoadingMore(true)
       setError(null)
+      const { from, to } = rangeForPage(page, PAGE_SIZE.myListings)
       const { data, error: qError } = await supabase
         .from('listings')
         .select('*')
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false })
+        .range(from, to)
       if (cancelled) return
       if (qError) setError(qError.message)
-      else setListings((data ?? []) as Listing[])
+      else {
+        const rows = (data ?? []) as Listing[]
+        setListings((prev) => (isFirstPage ? rows : [...prev, ...rows]))
+        setHasMore(hasMoreRows(rows.length, PAGE_SIZE.myListings))
+      }
       setLoading(false)
+      setLoadingMore(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [user])
+  }, [user, page])
 
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
   if (!user) return <Navigate to="/login" replace />
@@ -103,60 +116,74 @@ export function MyListingsPage() {
       ) : listings.length === 0 ? (
         <p className="text-ink-soft">You haven&apos;t listed any properties yet.</p>
       ) : (
-        <ul className="space-y-3">
-          {listings.map((listing) => (
-            <li
-              key={listing.id}
-              className="glass-card flex flex-col gap-4 rounded-2xl p-4 sm:flex-row sm:items-center"
-            >
-              <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-line">
-                {listing.image_urls?.[0] ? (
-                  <ListingImage
-                    src={listing.image_urls[0]}
-                    alt=""
-                    size="thumb"
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <ListingTypeBadge listingType={listing.listing_type} />
-                  <ListingStatusBadge status={listing.status} />
+        <>
+          <ul className="space-y-3">
+            {listings.map((listing) => (
+              <li
+                key={listing.id}
+                className="glass-card flex flex-col gap-4 rounded-2xl p-4 sm:flex-row sm:items-center"
+              >
+                <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-line">
+                  {listing.image_urls?.[0] ? (
+                    <ListingImage
+                      src={listing.image_urls[0]}
+                      alt=""
+                      size="thumb"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : null}
                 </div>
-                <Link to={`/listings/${listing.id}`} className="font-semibold text-ink hover:text-gold-dark">
-                  {listing.title}
-                </Link>
-                <p className="text-sm text-ink-soft">
-                  {formatListingPrice(Number(listing.price), listing.listing_type ?? 'sale')} ·{' '}
-                  {listing.city}
-                </p>
-                <p className="text-sm text-ink-soft">
-                  {listing.bedrooms} beds · {listing.bathrooms} baths
-                </p>
-                {listing.status === 'rejected' && listing.rejection_reason ? (
-                  <p className="mt-1 text-sm text-red-700">Rejected: {listing.rejection_reason}</p>
-                ) : null}
-              </div>
-              <div className="flex gap-2">
-                <Link
-                  to={`/listings/${listing.id}/edit`}
-                  className="btn-anim rounded-xl border border-line px-3 py-1.5 text-sm font-medium hover:bg-sand"
-                >
-                  Edit
-                </Link>
-                <button
-                  type="button"
-                  disabled={deletingId === listing.id}
-                  onClick={() => void removeListing(listing)}
-                  className="btn-anim rounded-xl border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
-                >
-                  {deletingId === listing.id ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <ListingTypeBadge listingType={listing.listing_type} />
+                    <ListingStatusBadge status={listing.status} />
+                  </div>
+                  <Link to={`/listings/${listing.id}`} className="font-semibold text-ink hover:text-gold-dark">
+                    {listing.title}
+                  </Link>
+                  <p className="text-sm text-ink-soft">
+                    {formatListingPrice(Number(listing.price), listing.listing_type ?? 'sale')} ·{' '}
+                    {listing.city}
+                  </p>
+                  <p className="text-sm text-ink-soft">
+                    {listing.bedrooms} beds · {listing.bathrooms} baths
+                  </p>
+                  {listing.status === 'rejected' && listing.rejection_reason ? (
+                    <p className="mt-1 text-sm text-red-700">Rejected: {listing.rejection_reason}</p>
+                  ) : null}
+                </div>
+                <div className="flex gap-2">
+                  <Link
+                    to={`/listings/${listing.id}/edit`}
+                    className="btn-anim rounded-xl border border-line px-3 py-1.5 text-sm font-medium hover:bg-sand"
+                  >
+                    Edit
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={deletingId === listing.id}
+                    onClick={() => void removeListing(listing)}
+                    className="btn-anim rounded-xl border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    {deletingId === listing.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {hasMore ? (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => setPage((p) => p + 1)}
+                className="btn-anim rounded-xl border border-line px-5 py-2 text-sm font-semibold text-ink hover:bg-sand disabled:opacity-60"
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   )

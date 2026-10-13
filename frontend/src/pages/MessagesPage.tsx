@@ -7,6 +7,7 @@ import { bubbleVariants } from '../lib/motion'
 import { ListingImage } from '../components/ListingImage'
 import { friendlyError } from '../lib/errors'
 import { formatMessageTime } from '../lib/messaging'
+import { hasMoreRows, PAGE_SIZE, rangeForPage } from '../lib/pagination'
 import { supabase } from '../lib/supabase'
 import type { Conversation, Message, Profile } from '../lib/types'
 
@@ -23,15 +24,41 @@ export function MessagesPage() {
   const [body, setBody] = useState('')
   const [loadingList, setLoadingList] = useState(true)
   const [loadingChat, setLoadingChat] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [loadingMoreConvos, setLoadingMoreConvos] = useState(false)
+  const [convoPage, setConvoPage] = useState(0)
+  const [hasMoreConvos, setHasMoreConvos] = useState(false)
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [ensureDone, setEnsureDone] = useState(false)
+  const skipScrollRef = useRef(false)
 
   const active = useMemo(
     () => conversations.find((c) => c.id === conversationId) ?? null,
     [conversations, conversationId],
   )
-  const conversationMissing = Boolean(conversationId) && !loadingList && !active
+  const conversationMissing =
+    Boolean(conversationId) && !loadingList && ensureDone && !active
+
+  async function enrichConversations(rows: Conversation[], uid: string): Promise<Conversation[]> {
+    const otherIds = [...new Set(rows.map((c) => (c.buyer_id === uid ? c.owner_id : c.buyer_id)))]
+    const names = new Map<string, string>()
+    if (otherIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles_safe')
+        .select('id, full_name')
+        .in('id', otherIds)
+      for (const p of (profiles ?? []) as Profile[]) {
+        names.set(p.id, p.full_name?.trim() || 'User')
+      }
+    }
+    return rows.map((c) => {
+      const otherId = c.buyer_id === uid ? c.owner_id : c.buyer_id
+      return { ...c, other_name: names.get(otherId) ?? 'User' }
+    })
+  }
 
   useEffect(() => {
     if (!user) return
@@ -40,12 +67,15 @@ export function MessagesPage() {
     ;(async () => {
       setLoadingList(true)
       setError(null)
+      setConvoPage(0)
 
+      const { from, to } = rangeForPage(0, PAGE_SIZE.conversations)
       const { data, error: qError } = await supabase
         .from('conversations')
         .select('*, listings(id, title, city, image_urls)')
         .or(`buyer_id.eq.${user.id},owner_id.eq.${user.id}`)
         .order('created_at', { ascending: false })
+        .range(from, to)
 
       if (cancelled) return
       if (qError) {
@@ -56,26 +86,9 @@ export function MessagesPage() {
       }
 
       const rows = (data ?? []) as Conversation[]
-      const otherIds = [...new Set(rows.map((c) => (c.buyer_id === user.id ? c.owner_id : c.buyer_id)))]
-
-      let names = new Map<string, string>()
-      if (otherIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles_safe')
-          .select('id, full_name')
-          .in('id', otherIds)
-        for (const p of (profiles ?? []) as Profile[]) {
-          names.set(p.id, p.full_name?.trim() || 'User')
-        }
-      }
-
       if (cancelled) return
-      setConversations(
-        rows.map((c) => {
-          const otherId = c.buyer_id === user.id ? c.owner_id : c.buyer_id
-          return { ...c, other_name: names.get(otherId) ?? 'User' }
-        }),
-      )
+      setConversations(await enrichConversations(rows, user.id))
+      setHasMoreConvos(hasMoreRows(rows.length, PAGE_SIZE.conversations))
       setLoadingList(false)
     })()
 
@@ -84,27 +97,93 @@ export function MessagesPage() {
     }
   }, [user])
 
+  // Pull in a deep-linked conversation if it is outside the first page
+  useEffect(() => {
+    if (!conversationId) {
+      setEnsureDone(true)
+      return
+    }
+    if (!user || loadingList) {
+      setEnsureDone(false)
+      return
+    }
+    let cancelled = false
+    setEnsureDone(false)
+    ;(async () => {
+      const { data: one } = await supabase
+        .from('conversations')
+        .select('*, listings(id, title, city, image_urls)')
+        .eq('id', conversationId)
+        .or(`buyer_id.eq.${user.id},owner_id.eq.${user.id}`)
+        .maybeSingle()
+      if (cancelled) return
+      if (one) {
+        const enriched = await enrichConversations([one as Conversation], user.id)
+        if (cancelled) return
+        setConversations((prev) =>
+          prev.some((c) => c.id === conversationId) ? prev : [...enriched, ...prev],
+        )
+      }
+      setEnsureDone(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, conversationId, loadingList])
+
+  async function loadMoreConversations() {
+    if (!user) return
+    const next = convoPage + 1
+    setLoadingMoreConvos(true)
+    const { from, to } = rangeForPage(next, PAGE_SIZE.conversations)
+    const { data, error: qError } = await supabase
+      .from('conversations')
+      .select('*, listings(id, title, city, image_urls)')
+      .or(`buyer_id.eq.${user.id},owner_id.eq.${user.id}`)
+      .order('created_at', { ascending: false })
+      .range(from, to)
+    setLoadingMoreConvos(false)
+    if (qError) {
+      setError(qError.message)
+      return
+    }
+    const rows = (data ?? []) as Conversation[]
+    const enriched = await enrichConversations(rows, user.id)
+    setConversations((prev) => [...prev, ...enriched])
+    setConvoPage(next)
+    setHasMoreConvos(hasMoreRows(rows.length, PAGE_SIZE.conversations))
+  }
+
   useEffect(() => {
     if (!user || !conversationId || conversationMissing) {
       setMessages([])
       setLoadingChat(false)
+      setHasOlderMessages(false)
       return
     }
 
     let cancelled = false
     setLoadingChat(true)
     setSendError(null)
+    setHasOlderMessages(false)
 
     ;(async () => {
+      // Newest page first so chat opens near the latest messages
+      const { from, to } = rangeForPage(0, PAGE_SIZE.messages)
       const { data, error: qError } = await supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
+        .range(from, to)
 
       if (cancelled) return
       if (qError) setError(qError.message)
-      else setMessages((data ?? []) as Message[])
+      else {
+        const rows = ((data ?? []) as Message[]).slice().reverse()
+        setMessages(rows)
+        setHasOlderMessages(hasMoreRows((data ?? []).length, PAGE_SIZE.messages))
+      }
       setLoadingChat(false)
     })()
 
@@ -116,7 +195,7 @@ export function MessagesPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
+          filter: `conversation_id.eq.${conversationId}`,
         },
         (payload) => {
           const next = payload.new as Message
@@ -131,7 +210,33 @@ export function MessagesPage() {
     }
   }, [user, conversationId, conversationMissing])
 
+  async function loadOlderMessages() {
+    if (!conversationId || messages.length === 0) return
+    const oldest = messages[0]
+    setLoadingOlder(true)
+    skipScrollRef.current = true
+    const { data, error: qError } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .lt('created_at', oldest.created_at)
+      .order('created_at', { ascending: false })
+      .range(0, PAGE_SIZE.messages - 1)
+    setLoadingOlder(false)
+    if (qError) {
+      setError(qError.message)
+      return
+    }
+    const older = ((data ?? []) as Message[]).slice().reverse()
+    setMessages((prev) => [...older, ...prev])
+    setHasOlderMessages(hasMoreRows((data ?? []).length, PAGE_SIZE.messages))
+  }
+
   useEffect(() => {
+    if (skipScrollRef.current) {
+      skipScrollRef.current = false
+      return
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, conversationId])
 
@@ -227,6 +332,18 @@ export function MessagesPage() {
                   </li>
                 )
               })}
+              {hasMoreConvos ? (
+                <li className="border-t border-line px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={loadingMoreConvos}
+                    onClick={() => void loadMoreConversations()}
+                    className="w-full text-sm font-semibold text-gold-dark disabled:opacity-60"
+                  >
+                    {loadingMoreConvos ? 'Loading…' : 'Load more'}
+                  </button>
+                </li>
+              ) : null}
             </ul>
           )}
         </aside>
@@ -267,33 +384,47 @@ export function MessagesPage() {
                 ) : messages.length === 0 ? (
                   <p className="text-sm text-ink-soft">No messages yet. Say hello.</p>
                 ) : (
-                  <AnimatePresence initial={false}>
-                    {messages.map((m) => {
-                      const mine = m.sender_id === user.id
-                      return (
-                        <motion.div
-                          key={m.id}
-                          variants={bubbleVariants(reduced, mine)}
-                          initial="initial"
-                          animate="animate"
-                          className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                  <>
+                    {hasOlderMessages ? (
+                      <div className="flex justify-center pb-2">
+                        <button
+                          type="button"
+                          disabled={loadingOlder}
+                          onClick={() => void loadOlderMessages()}
+                          className="text-xs font-semibold text-gold-dark disabled:opacity-60"
                         >
-                          <div
-                            className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                              mine
-                                ? 'rounded-br-md bg-ink text-sand'
-                                : 'rounded-bl-md bg-sand text-ink'
-                            }`}
+                          {loadingOlder ? 'Loading…' : 'Load older messages'}
+                        </button>
+                      </div>
+                    ) : null}
+                    <AnimatePresence initial={false}>
+                      {messages.map((m) => {
+                        const mine = m.sender_id === user.id
+                        return (
+                          <motion.div
+                            key={m.id}
+                            variants={bubbleVariants(reduced, mine)}
+                            initial="initial"
+                            animate="animate"
+                            className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
                           >
-                            <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                            <p className={`mt-1 text-[10px] ${mine ? 'text-sand/70' : 'text-ink-soft'}`}>
-                              {formatMessageTime(m.created_at)}
-                            </p>
-                          </div>
-                        </motion.div>
-                      )
-                    })}
-                  </AnimatePresence>
+                            <div
+                              className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                                mine
+                                  ? 'rounded-br-md bg-ink text-sand'
+                                  : 'rounded-bl-md bg-sand text-ink'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                              <p className={`mt-1 text-[10px] ${mine ? 'text-sand/70' : 'text-ink-soft'}`}>
+                                {formatMessageTime(m.created_at)}
+                              </p>
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                    </AnimatePresence>
+                  </>
                 )}
                 <div ref={bottomRef} />
               </div>

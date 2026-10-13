@@ -8,6 +8,7 @@ import { Seo } from '../components/Seo'
 import { useAuth } from '../context/AuthContext'
 import { logAppEvent } from '../lib/appEvents'
 import { formatListingPrice } from '../lib/format'
+import { hasMoreRows, PAGE_SIZE, rangeForPage } from '../lib/pagination'
 import { supabase } from '../lib/supabase'
 import type { Listing } from '../lib/types'
 
@@ -28,37 +29,102 @@ export function AdminPage() {
   const [listings, setListings] = useState<Listing[]>([])
   const [reports, setReports] = useState<ReportRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [listingsPage, setListingsPage] = useState(0)
+  const [reportsPage, setReportsPage] = useState(0)
+  const [hasMoreListings, setHasMoreListings] = useState(false)
+  const [hasMoreReports, setHasMoreReports] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [rejectDrafts, setRejectDrafts] = useState<Record<string, string>>({})
 
   const isAdmin = Boolean(profile?.is_admin)
 
-  const load = useCallback(async () => {
+  const loadInitial = useCallback(async () => {
     if (!user || !isAdmin) return
     setLoading(true)
     setError(null)
+    setListingsPage(0)
+    setReportsPage(0)
+
+    const lr = rangeForPage(0, PAGE_SIZE.admin)
+    const rr = rangeForPage(0, PAGE_SIZE.admin)
     const [listingsRes, reportsRes] = await Promise.all([
-      supabase.from('listings').select('*').eq('status', 'pending').order('created_at', { ascending: true }),
+      supabase
+        .from('listings')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .range(lr.from, lr.to),
       supabase
         .from('listing_reports')
         .select('*, listings(id, title, city, image_urls)')
         .eq('status', 'open')
-        .order('created_at', { ascending: true }),
+        .order('created_at', { ascending: true })
+        .range(rr.from, rr.to),
     ])
+
     if (listingsRes.error) setError(listingsRes.error.message)
-    else setListings((listingsRes.data ?? []) as Listing[])
+    else {
+      const rows = (listingsRes.data ?? []) as Listing[]
+      setListings(rows)
+      setHasMoreListings(hasMoreRows(rows.length, PAGE_SIZE.admin))
+    }
     if (reportsRes.error) {
       console.error('[admin] reports', reportsRes.error.message)
     } else {
-      setReports((reportsRes.data ?? []) as ReportRow[])
+      const rows = (reportsRes.data ?? []) as ReportRow[]
+      setReports(rows)
+      setHasMoreReports(hasMoreRows(rows.length, PAGE_SIZE.admin))
     }
     setLoading(false)
   }, [user, isAdmin])
 
+  async function loadMoreListings() {
+    const next = listingsPage + 1
+    setLoadingMore(true)
+    const { from, to } = rangeForPage(next, PAGE_SIZE.admin)
+    const { data, error: qError } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .range(from, to)
+    setLoadingMore(false)
+    if (qError) {
+      setError(qError.message)
+      return
+    }
+    const rows = (data ?? []) as Listing[]
+    setListings((prev) => [...prev, ...rows])
+    setListingsPage(next)
+    setHasMoreListings(hasMoreRows(rows.length, PAGE_SIZE.admin))
+  }
+
+  async function loadMoreReports() {
+    const next = reportsPage + 1
+    setLoadingMore(true)
+    const { from, to } = rangeForPage(next, PAGE_SIZE.admin)
+    const { data, error: qError } = await supabase
+      .from('listing_reports')
+      .select('*, listings(id, title, city, image_urls)')
+      .eq('status', 'open')
+      .order('created_at', { ascending: true })
+      .range(from, to)
+    setLoadingMore(false)
+    if (qError) {
+      setError(qError.message)
+      return
+    }
+    const rows = (data ?? []) as ReportRow[]
+    setReports((prev) => [...prev, ...rows])
+    setReportsPage(next)
+    setHasMoreReports(hasMoreRows(rows.length, PAGE_SIZE.admin))
+  }
+
   useEffect(() => {
-    void load()
-  }, [load])
+    void loadInitial()
+  }, [loadInitial])
 
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
   if (!user) return <Navigate to="/login" replace />
@@ -129,7 +195,8 @@ export function AdminPage() {
             }`}
             onClick={() => setTab('listings')}
           >
-            Pending listings ({listings.length})
+            Pending listings ({listings.length}
+            {hasMoreListings ? '+' : ''})
           </button>
           <button
             type="button"
@@ -140,7 +207,8 @@ export function AdminPage() {
             }`}
             onClick={() => setTab('reports')}
           >
-            Reports ({reports.length})
+            Reports ({reports.length}
+            {hasMoreReports ? '+' : ''})
           </button>
         </div>
       </div>
@@ -151,138 +219,166 @@ export function AdminPage() {
         </p>
       )}
 
-      <DataState loading={loading} onRetry={() => void load()} loadingMessage="Loading admin queue…">
+      <DataState loading={loading} onRetry={() => void loadInitial()} loadingMessage="Loading admin queue…">
         {tab === 'listings' ? (
           listings.length === 0 ? (
             <p className="text-ink-soft">No listings waiting for review.</p>
           ) : (
+            <>
+              <ul className="space-y-4">
+                {listings.map((listing) => (
+                  <li key={listing.id} className="glass-card space-y-4 rounded-2xl p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                      <div className="h-24 w-32 shrink-0 overflow-hidden rounded-lg bg-line">
+                        {listing.image_urls?.[0] ? (
+                          <ListingImage
+                            src={listing.image_urls[0]}
+                            alt={`${listing.title} thumbnail`}
+                            size="thumb"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <ListingTypeBadge listingType={listing.listing_type} />
+                          <ListingStatusBadge status={listing.status} />
+                        </div>
+                        <Link
+                          to={`/listings/${listing.id}`}
+                          className="font-semibold text-ink hover:text-gold-dark"
+                        >
+                          {listing.title}
+                        </Link>
+                        <p className="text-sm text-ink-soft">
+                          {formatListingPrice(Number(listing.price), listing.listing_type ?? 'sale')} ·{' '}
+                          {listing.city}
+                        </p>
+                        <p className="line-clamp-2 text-sm text-ink-soft">{listing.description}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 border-t border-line pt-3">
+                      <label className="block text-sm font-medium text-ink" htmlFor={`reject-${listing.id}`}>
+                        Rejection reason (optional)
+                      </label>
+                      <textarea
+                        id={`reject-${listing.id}`}
+                        rows={2}
+                        maxLength={500}
+                        value={rejectDrafts[listing.id] ?? ''}
+                        onChange={(e) =>
+                          setRejectDrafts((prev) => ({ ...prev, [listing.id]: e.target.value }))
+                        }
+                        placeholder="Shown to the owner if you reject…"
+                        className="form-control w-full resize-y"
+                        disabled={busyId === listing.id}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={busyId === listing.id}
+                          onClick={() => void setStatus(listing, 'approved')}
+                          className="btn-anim rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-60"
+                        >
+                          {busyId === listing.id ? 'Saving…' : 'Approve'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === listing.id}
+                          onClick={() => void setStatus(listing, 'rejected', rejectDrafts[listing.id])}
+                          className="btn-anim rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {hasMoreListings ? (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={loadingMore}
+                    onClick={() => void loadMoreListings()}
+                    className="btn-anim rounded-xl border border-line px-5 py-2 text-sm font-semibold text-ink hover:bg-sand disabled:opacity-60"
+                  >
+                    {loadingMore ? 'Loading…' : 'Load more'}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          )
+        ) : reports.length === 0 ? (
+          <p className="text-ink-soft">No open reports.</p>
+        ) : (
+          <>
             <ul className="space-y-4">
-              {listings.map((listing) => (
-                <li key={listing.id} className="glass-card space-y-4 rounded-2xl p-4">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                    <div className="h-24 w-32 shrink-0 overflow-hidden rounded-lg bg-line">
-                      {listing.image_urls?.[0] ? (
+              {reports.map((report) => (
+                <li key={report.id} className="glass-card space-y-3 rounded-2xl p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-line">
+                      {report.listings?.image_urls?.[0] ? (
                         <ListingImage
-                          src={listing.image_urls[0]}
-                          alt={`${listing.title} thumbnail`}
+                          src={report.listings.image_urls[0]}
+                          alt={`${report.listings.title ?? 'Listing'} thumbnail`}
                           size="thumb"
                           className="h-full w-full object-cover"
                         />
                       ) : null}
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <ListingTypeBadge listingType={listing.listing_type} />
-                        <ListingStatusBadge status={listing.status} />
-                      </div>
-                      <Link
-                        to={`/listings/${listing.id}`}
-                        className="font-semibold text-ink hover:text-gold-dark"
-                      >
-                        {listing.title}
-                      </Link>
+                      {report.listings ? (
+                        <Link
+                          to={`/listings/${report.listings.id}`}
+                          className="font-semibold text-ink hover:text-gold-dark"
+                        >
+                          {report.listings.title}
+                        </Link>
+                      ) : (
+                        <p className="font-semibold text-ink">Listing unavailable</p>
+                      )}
                       <p className="text-sm text-ink-soft">
-                        {formatListingPrice(Number(listing.price), listing.listing_type ?? 'sale')} ·{' '}
-                        {listing.city}
+                        Reported {new Date(report.created_at).toLocaleString()}
                       </p>
-                      <p className="line-clamp-2 text-sm text-ink-soft">{listing.description}</p>
+                      <p className="text-sm text-ink">{report.reason}</p>
                     </div>
                   </div>
-
-                  <div className="space-y-2 border-t border-line pt-3">
-                    <label className="block text-sm font-medium text-ink" htmlFor={`reject-${listing.id}`}>
-                      Rejection reason (optional)
-                    </label>
-                    <textarea
-                      id={`reject-${listing.id}`}
-                      rows={2}
-                      maxLength={500}
-                      value={rejectDrafts[listing.id] ?? ''}
-                      onChange={(e) =>
-                        setRejectDrafts((prev) => ({ ...prev, [listing.id]: e.target.value }))
-                      }
-                      placeholder="Shown to the owner if you reject…"
-                      className="form-control w-full resize-y"
-                      disabled={busyId === listing.id}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={busyId === listing.id}
-                        onClick={() => void setStatus(listing, 'approved')}
-                        className="btn-anim rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-60"
-                      >
-                        {busyId === listing.id ? 'Saving…' : 'Approve'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === listing.id}
-                        onClick={() => void setStatus(listing, 'rejected', rejectDrafts[listing.id])}
-                        className="btn-anim rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
-                      >
-                        Reject
-                      </button>
-                    </div>
+                  <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+                    <button
+                      type="button"
+                      disabled={busyId === report.id}
+                      onClick={() => void resolveReport(report, 'reviewed')}
+                      className="btn-anim rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-sand disabled:opacity-60"
+                    >
+                      Mark reviewed
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === report.id}
+                      onClick={() => void resolveReport(report, 'dismissed')}
+                      className="btn-anim rounded-xl border border-line px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                    >
+                      Dismiss
+                    </button>
                   </div>
                 </li>
               ))}
             </ul>
-          )
-        ) : reports.length === 0 ? (
-          <p className="text-ink-soft">No open reports.</p>
-        ) : (
-          <ul className="space-y-4">
-            {reports.map((report) => (
-              <li key={report.id} className="glass-card space-y-3 rounded-2xl p-4">
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-line">
-                    {report.listings?.image_urls?.[0] ? (
-                      <ListingImage
-                        src={report.listings.image_urls[0]}
-                        alt={`${report.listings.title ?? 'Listing'} thumbnail`}
-                        size="thumb"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : null}
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    {report.listings ? (
-                      <Link
-                        to={`/listings/${report.listings.id}`}
-                        className="font-semibold text-ink hover:text-gold-dark"
-                      >
-                        {report.listings.title}
-                      </Link>
-                    ) : (
-                      <p className="font-semibold text-ink">Listing unavailable</p>
-                    )}
-                    <p className="text-sm text-ink-soft">
-                      Reported {new Date(report.created_at).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-ink">{report.reason}</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-                  <button
-                    type="button"
-                    disabled={busyId === report.id}
-                    onClick={() => void resolveReport(report, 'reviewed')}
-                    className="btn-anim rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-sand disabled:opacity-60"
-                  >
-                    Mark reviewed
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busyId === report.id}
-                    onClick={() => void resolveReport(report, 'dismissed')}
-                    className="btn-anim rounded-xl border border-line px-4 py-2 text-sm font-semibold disabled:opacity-60"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+            {hasMoreReports ? (
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  disabled={loadingMore}
+                  onClick={() => void loadMoreReports()}
+                  className="btn-anim rounded-xl border border-line px-5 py-2 text-sm font-semibold text-ink hover:bg-sand disabled:opacity-60"
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </DataState>
     </div>
