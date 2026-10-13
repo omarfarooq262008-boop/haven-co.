@@ -18,6 +18,13 @@ dist-ssr
 .env.*.local
 !.env.example
 
+# Playwright / Vitest
+playwright-report
+test-results
+blob-report
+playwright/.cache
+coverage
+
 # Vercel
 .vercel
 

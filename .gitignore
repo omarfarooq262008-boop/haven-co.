@@ -10,6 +10,13 @@ node_modules
 # Build output
 dist
 
+# Playwright / Vitest
+frontend/playwright-report
+frontend/test-results
+frontend/blob-report
+frontend/playwright/.cache
+coverage
+
 # Vercel
 .vercel
 

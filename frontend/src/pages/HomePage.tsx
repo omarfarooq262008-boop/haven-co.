@@ -3,8 +3,13 @@ import { useSearchParams } from 'react-router-dom'
 import { BuyRentToggle } from '../components/BuyRentToggle'
 import { ListingCard, ListingCardSkeleton } from '../components/ListingCard'
 import { PROPERTY_TYPES } from '../lib/listingForm'
+import {
+  listingTypeForSection,
+  sectionFromSearch,
+  validatePriceFilters,
+} from '../lib/marketFilters'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import type { Listing, ListingType, MarketSection, PropertyType } from '../lib/types'
+import type { Listing, MarketSection, PropertyType } from '../lib/types'
 
 type Filters = {
   city: string
@@ -18,14 +23,6 @@ const emptyFilters: Filters = {
   minPrice: '',
   maxPrice: '',
   propertyType: '',
-}
-
-function sectionFromSearch(raw: string | null): MarketSection {
-  return raw === 'rent' ? 'rent' : 'buy'
-}
-
-function listingTypeForSection(section: MarketSection): ListingType {
-  return section === 'rent' ? 'rent' : 'sale'
 }
 
 export function HomePage() {
@@ -84,19 +81,9 @@ export function HomePage() {
 
   function applyFilters(e: FormEvent) {
     e.preventDefault()
-    const min = filters.minPrice.trim() ? Number(filters.minPrice) : null
-    const max = filters.maxPrice.trim() ? Number(filters.maxPrice) : null
-
-    if (min !== null && (Number.isNaN(min) || min < 0)) {
-      setFilterError('Min price must be a valid number')
-      return
-    }
-    if (max !== null && (Number.isNaN(max) || max < 0)) {
-      setFilterError('Max price must be a valid number')
-      return
-    }
-    if (min !== null && max !== null && min > max) {
-      setFilterError('Min price cannot be greater than max price')
+    const priceError = validatePriceFilters(filters)
+    if (priceError) {
+      setFilterError(priceError)
       return
     }
 
