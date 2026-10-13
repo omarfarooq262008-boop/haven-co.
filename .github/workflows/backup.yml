@@ -89,7 +89,7 @@ jobs:
           ls -lh "haven-co-backup-${STAMP}.tar.gz"
 
       - name: Upload private artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: haven-co-db-backup
           path: ${{ env.ARCHIVE }}
