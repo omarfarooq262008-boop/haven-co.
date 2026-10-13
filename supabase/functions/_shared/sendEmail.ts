@@ -5,6 +5,8 @@
  * Secrets only — never expose these to the frontend.
  */
 
+import { logAppEvent } from "./appEvents.ts"
+
 export type EmailAttachment = {
   filename: string
   /** Base64-encoded file content */
@@ -51,19 +53,34 @@ function fromAddress(): string {
 /** Send one email. Logs failures; callers should not block business writes on result. */
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   try {
+    let result: SendEmailResult
     if (hasGmail()) {
-      return await sendViaGmail(input)
+      result = await sendViaGmail(input)
+    } else if (hasResend()) {
+      result = await sendViaResend(input)
+    } else {
+      console.error("[sendEmail] No email provider configured (set Gmail or Resend secrets)")
+      result = { ok: false, error: "No email provider configured" }
     }
-    if (hasResend()) {
-      return await sendViaResend(input)
+
+    if (!result.ok) {
+      await logEmailFailure(result.provider ?? "none", result.error)
     }
-    console.error("[sendEmail] No email provider configured (set Gmail or Resend secrets)")
-    return { ok: false, error: "No email provider configured" }
+    return result
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error("[sendEmail] unexpected error", message)
+    await logEmailFailure("unknown", message)
     return { ok: false, error: message }
   }
+}
+
+async function logEmailFailure(provider: string, error?: string) {
+  await logAppEvent("email_failed", "sendEmail", {
+    provider,
+    // Truncated, no recipient address
+    error: (error ?? "send_failed").slice(0, 300),
+  })
 }
 
 async function sendViaResend(input: SendEmailInput): Promise<SendEmailResult> {

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
+import { logAppEvent } from "../_shared/appEvents.ts"
 import { getPaymentProvider } from "../_shared/payments.ts"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
 
@@ -117,6 +118,12 @@ Deno.serve(async (req) => {
       .update({ hold_status: "none" })
       .eq("id", hold.listing_id)
       .eq("hold_status", "on_hold")
+
+    await logAppEvent("hold_cancelled", "cancel-hold", {
+      hold_id: hold.id,
+      listing_id: hold.listing_id,
+      outcome: hold.status === "active" ? "refunded" : "cancelled",
+    })
 
     return json({
       ok: true,

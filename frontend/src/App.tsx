@@ -37,6 +37,9 @@ const MessagesPage = lazy(() =>
 const PaymentResultPage = lazy(() =>
   import('./pages/PaymentResultPage').then((m) => ({ default: m.PaymentResultPage })),
 )
+const StatusPage = lazy(() =>
+  import('./pages/StatusPage').then((m) => ({ default: m.StatusPage })),
+)
 
 function RouteFallback() {
   return (
@@ -66,6 +69,7 @@ export default function App() {
                 <Route path="my-listings" element={<MyListingsPage />} />
                 <Route path="my-bookings" element={<MyBookingsPage />} />
                 <Route path="payment/result" element={<PaymentResultPage />} />
+                <Route path="status" element={<StatusPage />} />
                 <Route path="admin" element={<AdminPage />} />
                 <Route path="messages" element={<MessagesPage />} />
                 <Route path="messages/:conversationId" element={<MessagesPage />} />

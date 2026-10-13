@@ -4,6 +4,7 @@ import { ListingImage } from '../components/ListingImage'
 import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { ListingTypeBadge } from '../components/ListingTypeBadge'
 import { useAuth } from '../context/AuthContext'
+import { logAppEvent } from '../lib/appEvents'
 import { formatListingPrice } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import type { Listing } from '../lib/types'
@@ -70,6 +71,9 @@ export function AdminPage() {
       setBusyId(null)
       return
     }
+    void logAppEvent(status === 'approved' ? 'listing_approved' : 'listing_rejected', 'AdminPage', {
+      listing_id: listing.id,
+    })
     setListings((prev) => prev.filter((item) => item.id !== listing.id))
     setBusyId(null)
   }

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2"
+import { logAppEvent } from "./appEvents.ts"
 
 export type RateLimitResult =
   | { ok: true }
@@ -52,6 +53,10 @@ export async function enforceEdgeRateLimits(opts: {
   }
 
   if (!ipOk) {
+    void logAppEvent("rate_limit_hit", "rateLimit", {
+      scope: opts.scope,
+      kind: "ip",
+    })
     return {
       ok: false,
       status: 429,
@@ -73,6 +78,10 @@ export async function enforceEdgeRateLimits(opts: {
     }
 
     if (!userOk) {
+      void logAppEvent("rate_limit_hit", "rateLimit", {
+        scope: opts.scope,
+        kind: "user",
+      })
       return {
         ok: false,
         status: 429,

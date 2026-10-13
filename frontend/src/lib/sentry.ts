@@ -37,11 +37,17 @@ export function initSentry(): void {
   if (!dsn) return
 
   try {
+    const release =
+      (import.meta.env.VITE_APP_RELEASE as string | undefined)?.trim() ||
+      (import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined)?.trim() ||
+      undefined
+
     Sentry.init({
       dsn,
       environment: import.meta.env.MODE,
-      // Keep the free plan light — errors only, no Session Replay.
-      tracesSampleRate: 0,
+      release: release ? `haven-co@${release}` : undefined,
+      // Performance tracing at 10% — keep cost low; PII still scrubbed below.
+      tracesSampleRate: 0.1,
       dataCollection: {
         userInfo: false,
         cookies: false,

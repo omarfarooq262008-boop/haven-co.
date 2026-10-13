@@ -15,6 +15,7 @@ import {
   type BookingFormErrors,
   type BookingFormValues,
 } from '../lib/booking'
+import { logAppEvent } from '../lib/appEvents'
 import { friendlyError } from '../lib/errors'
 import {
   createHoldCheckout,
@@ -224,6 +225,10 @@ export function BookMeetingPage() {
       }
 
       if (data?.id) {
+        void logAppEvent('booking_created', 'BookMeetingPage', {
+          booking_id: data.id,
+          listing_id: listing.id,
+        })
         await notifyBookingEmail(data.id)
       }
 

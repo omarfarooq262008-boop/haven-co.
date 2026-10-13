@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
+import { logAppEvent } from "../_shared/appEvents.ts"
 import { sendHoldConfirmationEmails } from "../_shared/holdEmails.ts"
 import {
   getPaymentProvider,
@@ -219,6 +220,17 @@ async function fulfillWebhookEvent(
       .from("listings")
       .update({ hold_status: "on_hold" })
       .eq("id", hold.listing_id)
+
+    await logAppEvent("hold_activated", "payment-webhook", {
+      hold_id: hold.id,
+      listing_id: hold.listing_id,
+      booking_id: hold.booking_id,
+    })
+    await logAppEvent("booking_created", "payment-webhook", {
+      booking_id: hold.booking_id,
+      listing_id: hold.listing_id,
+      via: "hold",
+    })
 
     const [{ data: booking }, { data: listing }] = await Promise.all([
       admin.from("bookings").select("*").eq("id", hold.booking_id).single(),

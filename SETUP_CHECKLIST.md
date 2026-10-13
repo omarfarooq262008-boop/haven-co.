@@ -34,7 +34,8 @@
 1. Run `supabase/schema.sql` (new project) or confirm schema already exists.
 2. Run `supabase/all_migrations_in_order.sql` (or follow `supabase/RUN_ORDER.md`).
 3. Run `supabase/migration_holds.sql` (paid holds — safe to re-run).
-4. Promote yourself to admin (SQL Editor):
+4. Run `supabase/migration_app_events.sql` (ops event log — safe to re-run).
+5. Promote yourself to admin (SQL Editor):
 
    ```sql
    update public.profiles
@@ -129,7 +130,13 @@ npx supabase functions deploy notify-listing-review --use-api
 
 5. Test with mock: open a listing → **Hold this property** → fill the meeting form → **Pay and book** → on the mock checkout page choose **Pay successfully** → land on `/payment/result?status=success` → confirm hold in **My bookings**. Owner can **Cancel hold** to refund and free the listing.
 
-### 8. Optional
+### 8. Monitoring
+
+1. Deploy health: `npx supabase functions deploy health --use-api`
+2. Open `/status` on the frontend and confirm “All systems working”.
+3. Follow click paths in `docs/MONITORING.md` (UptimeRobot, Sentry alerts, Vercel deploy failures, Supabase usage).
+
+### 9. Optional
 
 - **Sentry:** create a React project, copy the DSN into `VITE_SENTRY_DSN` (Vercel + local `.env`), redeploy.
 - **Image transforms:** Supabase Pro+ → Storage → enable Image Transformations → set `VITE_SUPABASE_IMAGE_TRANSFORM=true` and redeploy.

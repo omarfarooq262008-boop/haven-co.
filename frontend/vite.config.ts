@@ -3,8 +3,18 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+/** Vercel injects VERCEL_GIT_COMMIT_SHA at build time — bake into the client bundle. */
+const releaseSha =
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.VITE_VERCEL_GIT_COMMIT_SHA ||
+  process.env.VITE_APP_RELEASE ||
+  ''
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    'import.meta.env.VITE_APP_RELEASE': JSON.stringify(releaseSha),
+  },
   server: { port: 5173, strictPort: true },
   build: {
     rollupOptions: {
