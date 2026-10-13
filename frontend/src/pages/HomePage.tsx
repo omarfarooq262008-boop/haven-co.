@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BuyRentToggle } from '../components/BuyRentToggle'
+import { DataState } from '../components/DataState'
 import { ListingCard, ListingCardSkeleton } from '../components/ListingCard'
+import { Seo } from '../components/Seo'
 import { PROPERTY_TYPES } from '../lib/listingForm'
 import {
   listingTypeForSection,
@@ -105,57 +107,91 @@ export function HomePage() {
 
   return (
     <div className="space-y-10 md:space-y-12">
+      <Seo
+        title={section === 'rent' ? 'Homes for rent' : 'Homes for sale'}
+        description={
+          section === 'rent'
+            ? 'Browse rental homes listed by real owners on Haven & Co.'
+            : 'Browse homes for sale listed by real owners on Haven & Co.'
+        }
+        path={section === 'rent' ? '/?type=rent' : '/'}
+      />
       <section
         className="glass-panel home-slide-in rounded-2xl px-5 py-8 md:px-8 md:py-10"
         style={{ animationDelay: '0ms' }}
+        aria-labelledby="home-heading"
       >
         <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">
           Find your next place
         </p>
-        <h1 className="mt-2 max-w-2xl font-display text-4xl font-bold text-ink md:text-5xl">
+        <h1 id="home-heading" className="mt-2 max-w-2xl font-display text-4xl font-bold text-ink md:text-5xl">
           Browse homes listed by real owners
         </h1>
         <p className="mt-3 max-w-xl text-ink-soft">
           Filter by city, price, and property type — then open a listing to message the owner.
         </p>
 
-        <form className="mt-8 grid gap-3 md:grid-cols-5" onSubmit={applyFilters}>
-          <input
-            value={filters.city}
-            onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))}
-            placeholder="City"
-            className="rounded-xl border border-line bg-white/70 px-4 py-3 text-ink outline-none ring-gold focus:ring-2 md:col-span-1"
-          />
-          <input
-            type="number"
-            min="0"
-            value={filters.minPrice}
-            onChange={(e) => setFilters((f) => ({ ...f, minPrice: e.target.value }))}
-            placeholder="Min price"
-            className="rounded-xl border border-line bg-white/70 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
-          />
-          <input
-            type="number"
-            min="0"
-            value={filters.maxPrice}
-            onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value }))}
-            placeholder="Max price"
-            className="rounded-xl border border-line bg-white/70 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
-          />
-          <select
-            value={filters.propertyType}
-            onChange={(e) =>
-              setFilters((f) => ({ ...f, propertyType: e.target.value as Filters['propertyType'] }))
-            }
-            className="rounded-xl border border-line bg-white/70 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
-          >
+        <form className="mt-8 grid gap-3 md:grid-cols-5" onSubmit={applyFilters} aria-label="Listing filters">
+          <div className="md:col-span-1">
+            <label htmlFor="filter-city" className="sr-only">
+              City
+            </label>
+            <input
+              id="filter-city"
+              value={filters.city}
+              onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))}
+              placeholder="City"
+              className="w-full rounded-xl border border-line bg-white/90 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
+            />
+          </div>
+          <div>
+            <label htmlFor="filter-min-price" className="sr-only">
+              Minimum price
+            </label>
+            <input
+              id="filter-min-price"
+              type="number"
+              min="0"
+              value={filters.minPrice}
+              onChange={(e) => setFilters((f) => ({ ...f, minPrice: e.target.value }))}
+              placeholder="Min price"
+              className="w-full rounded-xl border border-line bg-white/90 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
+            />
+          </div>
+          <div>
+            <label htmlFor="filter-max-price" className="sr-only">
+              Maximum price
+            </label>
+            <input
+              id="filter-max-price"
+              type="number"
+              min="0"
+              value={filters.maxPrice}
+              onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value }))}
+              placeholder="Max price"
+              className="w-full rounded-xl border border-line bg-white/90 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
+            />
+          </div>
+          <div>
+            <label htmlFor="filter-property-type" className="sr-only">
+              Property type
+            </label>
+            <select
+              id="filter-property-type"
+              value={filters.propertyType}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, propertyType: e.target.value as Filters['propertyType'] }))
+              }
+              className="w-full rounded-xl border border-line bg-white/90 px-4 py-3 text-ink outline-none ring-gold focus:ring-2"
+            >
             <option value="">All types</option>
-            {PROPERTY_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
+              {PROPERTY_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex gap-2">
             <button
               type="submit"
@@ -183,11 +219,9 @@ export function HomePage() {
         <BuyRentToggle value={section} onChange={setSection} />
       </div>
 
-      {error && (
-        <p className="glass-panel home-slide-in rounded-2xl px-4 py-3 text-sm text-red-800">
-          {error}
-        </p>
-      )}
+      {error ? (
+        <DataState error={error} onRetry={() => setApplied({ ...applied })} />
+      ) : null}
 
       <div className="listings-fullbleed">
         {loading ? (

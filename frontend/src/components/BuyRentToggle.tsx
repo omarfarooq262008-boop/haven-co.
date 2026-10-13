@@ -30,11 +30,10 @@ export function BuyRentToggle({ value, onChange }: Props) {
     <div className="w-full">
       <div
         role="radiogroup"
-        aria-label="Buy or rent"
+        aria-label="Filter listings by Buy or Rent"
         tabIndex={0}
         onKeyDown={onKeyDown}
-        onClick={() => setSection(isRent ? 'buy' : 'rent')}
-        className="glass-panel relative mx-auto grid max-w-md cursor-pointer grid-cols-2 rounded-full p-1 outline-none focus-visible:ring-2 focus-visible:ring-gold sm:max-w-lg"
+        className="glass-panel relative mx-auto grid max-w-md grid-cols-2 rounded-full p-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-gold-dark)] focus-visible:ring-offset-2 sm:max-w-lg"
       >
         <span
           aria-hidden
@@ -46,9 +45,10 @@ export function BuyRentToggle({ value, onChange }: Props) {
           type="button"
           role="radio"
           aria-checked={!isRent}
+          aria-label="Show homes for sale"
           tabIndex={-1}
-          className={`relative z-10 rounded-full py-2.5 text-center text-sm font-semibold transition-colors duration-[250ms] ${
-            !isRent ? 'text-sand' : 'text-ink-soft'
+          className={`relative z-10 rounded-full py-2.5 text-center text-sm font-semibold transition-colors duration-[250ms] focus-visible:ring-2 focus-visible:ring-gold ${
+            !isRent ? 'text-sand' : 'text-ink'
           }`}
           onClick={(e) => {
             e.stopPropagation()
@@ -61,9 +61,10 @@ export function BuyRentToggle({ value, onChange }: Props) {
           type="button"
           role="radio"
           aria-checked={isRent}
+          aria-label="Show homes for rent"
           tabIndex={-1}
-          className={`relative z-10 rounded-full py-2.5 text-center text-sm font-semibold transition-colors duration-[250ms] ${
-            isRent ? 'text-sand' : 'text-ink-soft'
+          className={`relative z-10 rounded-full py-2.5 text-center text-sm font-semibold transition-colors duration-[250ms] focus-visible:ring-2 focus-visible:ring-gold ${
+            isRent ? 'text-sand' : 'text-ink'
           }`}
           onClick={(e) => {
             e.stopPropagation()

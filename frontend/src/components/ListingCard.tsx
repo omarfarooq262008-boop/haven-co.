@@ -31,7 +31,7 @@ export function ListingCard({ listing, index = 0 }: Props) {
           {listing.image_urls?.[0] ? (
             <ListingImage
               src={listing.image_urls[0]}
-              alt={listing.title}
+              alt={`${listing.title} in ${listing.city}`}
               size="card"
               className="listing-card-photo h-full w-full object-cover"
             />

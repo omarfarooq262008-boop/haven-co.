@@ -24,3 +24,6 @@ verify_jwt = true
 # Public uptime probe — rate-limited in code; uses anon key from monitors.
 [functions.health]
 verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = true

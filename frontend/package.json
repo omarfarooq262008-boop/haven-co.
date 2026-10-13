@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node ./scripts/generate-sitemap.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint .",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sitemap": "node ./scripts/generate-sitemap.mjs"
   },
   "dependencies": {
     "@sentry/react": "^11.6.0",

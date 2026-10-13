@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin
+Disallow: /account
+Disallow: /messages
+Disallow: /my-listings
+Disallow: /my-bookings
+Disallow: /login
+Disallow: /signup
+Disallow: /payment/
+
+Sitemap: https://havenandco.example/sitemap.xml

@@ -40,10 +40,25 @@ const PaymentResultPage = lazy(() =>
 const StatusPage = lazy(() =>
   import('./pages/StatusPage').then((m) => ({ default: m.StatusPage })),
 )
+const AccountPage = lazy(() =>
+  import('./pages/AccountPage').then((m) => ({ default: m.AccountPage })),
+)
+const PrivacyPage = lazy(() =>
+  import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })),
+)
+const TermsPage = lazy(() =>
+  import('./pages/TermsPage').then((m) => ({ default: m.TermsPage })),
+)
+const ContactPage = lazy(() =>
+  import('./pages/ContactPage').then((m) => ({ default: m.ContactPage })),
+)
+const NotFoundPage = lazy(() =>
+  import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
+)
 
 function RouteFallback() {
   return (
-    <div className="flex min-h-[40vh] items-center justify-center">
+    <div className="flex min-h-[40vh] items-center justify-center" role="status" aria-live="polite">
       <p className="text-sm text-ink-soft">Loading…</p>
     </div>
   )
@@ -70,10 +85,14 @@ export default function App() {
                 <Route path="my-bookings" element={<MyBookingsPage />} />
                 <Route path="payment/result" element={<PaymentResultPage />} />
                 <Route path="status" element={<StatusPage />} />
+                <Route path="account" element={<AccountPage />} />
+                <Route path="privacy" element={<PrivacyPage />} />
+                <Route path="terms" element={<TermsPage />} />
+                <Route path="contact" element={<ContactPage />} />
                 <Route path="admin" element={<AdminPage />} />
                 <Route path="messages" element={<MessagesPage />} />
                 <Route path="messages/:conversationId" element={<MessagesPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
           </Suspense>

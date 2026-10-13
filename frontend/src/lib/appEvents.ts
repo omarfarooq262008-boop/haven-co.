@@ -9,6 +9,8 @@ export type AppEventType =
   | 'hold_activated'
   | 'hold_cancelled'
   | 'health_check_failed'
+  | 'account_deleted'
+  | 'listing_reported'
 
 const SENSITIVE_KEY =
   /^(email|e-mail|phone|mobile|tel|password|token|secret|authorization|visitor_email|visitor_phone|visitor_name|full_name|html|body|message|note|card|pan)$/i

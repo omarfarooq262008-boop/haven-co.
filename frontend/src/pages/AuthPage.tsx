@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Seo } from '../components/Seo'
 import { useAuth } from '../context/AuthContext'
 import { friendlyError } from '../lib/errors'
 
@@ -58,6 +59,16 @@ export function AuthPage({ mode: modeProp }: { mode?: Mode }) {
 
   return (
     <div className="glass-panel soft-enter mx-auto max-w-md rounded-2xl p-6 md:p-8">
+      <Seo
+        title={mode === 'login' ? 'Log in' : 'Sign up'}
+        description={
+          mode === 'login'
+            ? 'Sign in to Haven & Co. to message owners and book viewings.'
+            : 'Create a Haven & Co. account to list homes and message owners.'
+        }
+        path={mode === 'login' ? '/login' : '/signup'}
+        noIndex
+      />
       <h1 className="font-display text-3xl font-bold">
         {mode === 'login' ? 'Log in' : 'Create account'}
       </h1>
@@ -69,39 +80,49 @@ export function AuthPage({ mode: modeProp }: { mode?: Mode }) {
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit}>
         {mode === 'signup' && (
-          <label className="block space-y-1 text-sm">
-            <span className="font-medium">Full name</span>
+          <div className="space-y-1 text-sm">
+            <label htmlFor="auth-full-name" className="font-medium text-ink">
+              Full name
+            </label>
             <input
+              id="auth-full-name"
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full rounded border border-line px-3 py-2 outline-none focus:border-gold"
+              className="form-control w-full"
+              autoComplete="name"
             />
-          </label>
+          </div>
         )}
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium">Email</span>
+        <div className="space-y-1 text-sm">
+          <label htmlFor="auth-email" className="font-medium text-ink">
+            Email
+          </label>
           <input
+            id="auth-email"
             required
             type="email"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded border border-line px-3 py-2 outline-none focus:border-gold"
+            className="form-control w-full"
           />
-        </label>
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium">Password</span>
+        </div>
+        <div className="space-y-1 text-sm">
+          <label htmlFor="auth-password" className="font-medium text-ink">
+            Password
+          </label>
           <input
+            id="auth-password"
             required
             type="password"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded border border-line px-3 py-2 outline-none focus:border-gold"
+            className="form-control w-full"
           />
-        </label>
+        </div>
 
         {error && <p className="text-sm text-red-700">{error}</p>}
         {info && <p className="text-sm text-ink-soft">{info}</p>}

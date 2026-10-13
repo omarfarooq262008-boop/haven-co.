@@ -35,7 +35,8 @@
 2. Run `supabase/all_migrations_in_order.sql` (or follow `supabase/RUN_ORDER.md`).
 3. Run `supabase/migration_holds.sql` (paid holds — safe to re-run).
 4. Run `supabase/migration_app_events.sql` (ops event log — safe to re-run).
-5. Promote yourself to admin (SQL Editor):
+5. Run `supabase/migration_launch_polish.sql` (listing reports + account delete helper).
+6. Promote yourself to admin (SQL Editor):
 
    ```sql
    update public.profiles

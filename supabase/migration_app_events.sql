@@ -13,7 +13,9 @@ create table if not exists public.app_events (
       'rate_limit_hit',
       'hold_activated',
       'hold_cancelled',
-      'health_check_failed'
+      'health_check_failed',
+      'account_deleted',
+      'listing_reported'
     )),
   source text not null default 'app' check (char_length(trim(source)) between 1 and 80),
   metadata jsonb not null default '{}'::jsonb,

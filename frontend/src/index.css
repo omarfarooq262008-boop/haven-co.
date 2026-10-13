@@ -3,13 +3,14 @@
 @theme {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
-  --color-ink: #1a2744;
-  --color-ink-soft: #334155;
+  /* WCAG AA-friendly ink on white / glass panels (≥4.5:1) */
+  --color-ink: #142033;
+  --color-ink-soft: #2a3a4f;
   --color-sand: #f4f0ea;
   --color-gold: #c9a24d;
-  --color-gold-dark: #a8842f;
-  --color-card: rgb(255 255 255 / 0.82);
-  --color-line: rgb(255 255 255 / 0.55);
+  --color-gold-dark: #8a6a1f;
+  --color-card: rgb(255 255 255 / 0.92);
+  --color-line: rgb(20 32 51 / 0.18);
   --shadow-soft: 0 14px 40px -18px rgb(26 39 68 / 0.4);
 }
 
@@ -32,6 +33,37 @@
   h3 {
     font-family: var(--font-display);
   }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold-dark);
+    outline-offset: 2px;
+  }
+
+  /* Avoid double rings when components set their own focus-visible styles */
+  button:focus:not(:focus-visible),
+  a:focus:not(:focus-visible),
+  input:focus:not(:focus-visible),
+  select:focus:not(:focus-visible),
+  textarea:focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 100;
+  border-radius: 10px;
+  background: var(--color-ink);
+  color: var(--color-sand);
+  padding: 10px 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 12px;
 }
 
 /* Fixed full-screen photo via pseudo-elements (avoids background-attachment: fixed lag) */
@@ -70,20 +102,23 @@
 .app-shell--home .glass-panel,
 .app-shell--home .glass-card,
 .app-shell--form .glass-panel {
-  background: rgb(255 255 255 / 0.92);
+  /* Stronger opacity so body text meets WCAG AA over the photo */
+  background: rgb(255 255 255 / 0.96);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  color: var(--color-ink);
 }
 
 .app-bg::after {
   content: "";
   position: absolute;
   inset: 0;
+  /* Darker scrim for contrast behind translucent chrome */
   background: linear-gradient(
     180deg,
-    rgb(26 39 68 / 0.62) 0%,
-    rgb(26 39 68 / 0.28) 42%,
-    rgb(26 39 68 / 0.55) 100%
+    rgb(20 32 51 / 0.72) 0%,
+    rgb(20 32 51 / 0.4) 42%,
+    rgb(20 32 51 / 0.68) 100%
   );
 }
 
@@ -114,8 +149,8 @@
 }
 
 .app-header {
-  background: rgb(255 255 255 / 0.9);
-  border-bottom: 1px solid rgb(255 255 255 / 0.5);
+  background: rgb(255 255 255 / 0.96);
+  border-bottom: 1px solid rgb(20 32 51 / 0.12);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   box-shadow: var(--shadow-soft);
@@ -417,10 +452,13 @@
   border-color: rgb(201 162 77 / 0.55);
 }
 
-.form-control:focus {
-  border-color: var(--color-gold);
-  box-shadow: 0 0 0 3px rgb(201 162 77 / 0.22);
-  background: rgb(255 255 255 / 0.95);
+.form-control:focus,
+.form-control:focus-visible {
+  border-color: var(--color-gold-dark);
+  box-shadow: 0 0 0 3px rgb(138 106 31 / 0.28);
+  background: rgb(255 255 255 / 0.98);
+  outline: 2px solid var(--color-gold-dark);
+  outline-offset: 2px;
 }
 
 .form-affix {

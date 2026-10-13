@@ -14,5 +14,6 @@ Do not skip `schema.sql` on a brand-new project. If the schema is already applie
 | 7 | `migration_rate_limits.sql` | DB rate limits for listings/messages/bookings + edge rate-limit buckets. |
 | 8 | `migration_holds.sql` | Paid holds: `holds` table, `hold_status`, fee config, booking `pending`, `expire_holds` + pg_cron. |
 | 9 | `migration_app_events.sql` | `app_events` table + `log_app_event` for ops monitoring (approvals, bookings, email failures, rate limits). |
+| 10 | `migration_launch_polish.sql` | Listing reports queue + `prepare_account_deletion` helper for account delete. |
 
-**Shortcut:** after `schema.sql`, paste `all_migrations_in_order.sql` once (files 2–7 combined, idempotent), then run `migration_holds.sql` and `migration_app_events.sql`.
+**Shortcut:** after `schema.sql`, paste `all_migrations_in_order.sql` once (files 2–7 combined, idempotent), then run `migration_holds.sql`, `migration_app_events.sql`, and `migration_launch_polish.sql`.
