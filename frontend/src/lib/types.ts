@@ -70,7 +70,7 @@ export type Booking = {
   note: string
   status: BookingStatus
   created_at: string
-  listings?: Pick<Listing, 'id' | 'title' | 'city' | 'address' | 'image_urls' | 'hold_status'> | null
+  listings?: Pick<Listing, 'id' | 'title' | 'city' | 'address' | 'image_urls'> | null
 }
 
 export type HoldRow = {

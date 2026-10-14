@@ -23,6 +23,8 @@ import {
   fetchHoldFeePkr,
   formatHoldFee,
   HOLD_DURATION_HOURS,
+  HOLDS_FEATURE_ENABLED,
+  isListingOnHold,
 } from '../lib/holds'
 import { supabase } from '../lib/supabase'
 import type { Listing } from '../lib/types'
@@ -55,7 +57,7 @@ export function BookMeetingPage() {
   }, [user, profile])
 
   useEffect(() => {
-    if (!holdMode) return
+    if (!holdMode || !HOLDS_FEATURE_ENABLED) return
     let cancelled = false
     ;(async () => {
       const fee = await fetchHoldFeePkr()
@@ -143,7 +145,7 @@ export function BookMeetingPage() {
     )
   }
 
-  const onHold = listing.hold_status === 'on_hold'
+  const onHold = isListingOnHold(listing)
   if (onHold) {
     return (
       <div className="space-y-3">
@@ -153,6 +155,34 @@ export function BookMeetingPage() {
         <Link to={`/listings/${listing.id}`} className="text-sm text-ink-soft hover:text-ink">
           ← Back to listing
         </Link>
+      </div>
+    )
+  }
+
+  if (holdMode && !HOLDS_FEATURE_ENABLED) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4">
+        <div className="glass-panel space-y-3 rounded-2xl px-5 py-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">Coming soon</p>
+          <h1 className="font-display text-3xl font-bold text-ink">Hold this property</h1>
+          <p className="text-sm text-ink-soft">
+            Paid holds are not available yet. You can still book a meeting with the owner.
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Link
+              to={`/listings/${listing.id}/book`}
+              className="btn-anim rounded-xl bg-gold px-5 py-3 font-semibold text-ink hover:bg-gold-dark"
+            >
+              Book a meeting
+            </Link>
+            <Link
+              to={`/listings/${listing.id}`}
+              className="btn-anim rounded-xl border border-line bg-white/70 px-5 py-3 font-semibold text-ink"
+            >
+              Back to listing
+            </Link>
+          </div>
+        </div>
       </div>
     )
   }
@@ -180,6 +210,9 @@ export function BookMeetingPage() {
     setBusy(true)
     try {
       if (holdMode) {
+        if (!HOLDS_FEATURE_ENABLED) {
+          throw new Error('Paid holds are coming soon. Please book a meeting instead.')
+        }
         const result = await createHoldCheckout({
           listingId: listing.id,
           visitor_name: values.visitor_name.trim(),
@@ -267,14 +300,23 @@ export function BookMeetingPage() {
           >
             Book a meeting
           </Link>
-          <Link
-            to={`/listings/${listing.id}/book?hold=1`}
-            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
-              holdMode ? 'bg-ink text-sand' : 'border border-line bg-white/60 text-ink'
-            }`}
-          >
-            Hold this property
-          </Link>
+          {HOLDS_FEATURE_ENABLED ? (
+            <Link
+              to={`/listings/${listing.id}/book?hold=1`}
+              className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
+                holdMode ? 'bg-ink text-sand' : 'border border-line bg-white/60 text-ink'
+              }`}
+            >
+              Hold this property
+            </Link>
+          ) : (
+            <span
+              className="rounded-xl border border-line bg-white/50 px-3 py-1.5 text-sm font-semibold text-ink-soft"
+              title="Paid holds are not available yet"
+            >
+              Hold · Coming soon
+            </span>
+          )}
         </div>
         <Link to={`/listings/${listing.id}`} className="mt-3 inline-block text-sm text-ink-soft hover:text-ink">
           ← Back to listing

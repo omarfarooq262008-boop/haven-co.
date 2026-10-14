@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DataState } from '../components/DataState'
 import { HoldBadge } from '../components/HoldBadge'
+import { HOLDS_FEATURE_ENABLED, isListingOnHold } from '../lib/holds'
 import { ListingImage } from '../components/ListingImage'
 import { ListingStatusBadge } from '../components/ListingStatusBadge'
 import { ListingTypeBadge } from '../components/ListingTypeBadge'
@@ -118,7 +119,7 @@ export function ListingDetailPage() {
 
   const photos = listing.image_urls?.length ? listing.image_urls : []
   const isOwner = user?.id === listing.owner_id
-  const onHold = listing.hold_status === 'on_hold'
+  const onHold = isListingOnHold(listing)
   const cover = photos[0] ?? null
   const desc = listing.description.slice(0, 160)
 
@@ -299,13 +300,24 @@ export function ListingDetailPage() {
               </button>
             </div>
             {!onHold ? (
-              <Link
-                to={user ? `/listings/${listing.id}/book?hold=1` : '/login'}
-                state={user ? undefined : { from: `/listings/${listing.id}/book?hold=1` }}
-                className="btn-anim rounded-xl border border-ink/20 bg-white/80 px-5 py-3 text-left text-sm font-semibold text-ink hover:bg-sand"
-              >
-                Hold this property
-              </Link>
+              HOLDS_FEATURE_ENABLED ? (
+                <Link
+                  to={user ? `/listings/${listing.id}/book?hold=1` : '/login'}
+                  state={user ? undefined : { from: `/listings/${listing.id}/book?hold=1` }}
+                  className="btn-anim rounded-xl border border-ink/20 bg-white/80 px-5 py-3 text-left text-sm font-semibold text-ink hover:bg-sand"
+                >
+                  Hold this property
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl border border-ink/15 bg-white/70 px-5 py-3 text-left text-sm font-semibold text-ink-soft opacity-80"
+                  title="Paid holds are not available yet"
+                >
+                  Hold this property · Coming soon
+                </button>
+              )
             ) : null}
 
             <div className="border-t border-line pt-3">

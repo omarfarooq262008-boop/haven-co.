@@ -1,8 +1,19 @@
 import { supabase } from './supabase'
+import type { Listing, ListingHoldStatus } from './types'
+
+/** Paid holds UI is parked until the full hold stack is enabled in production. */
+export const HOLDS_FEATURE_ENABLED = false
 
 /** Hold fee is stored in platform_config.hold_fee_pkr — default shown until loaded */
 export const DEFAULT_HOLD_FEE_PKR = 5000
 export const HOLD_DURATION_HOURS = 48
+
+/** Treat missing / null hold_status as not on hold — never crash the page. */
+export function isListingOnHold(
+  listing: Pick<Listing, 'hold_status'> | { hold_status?: ListingHoldStatus | null } | null | undefined,
+): boolean {
+  return listing?.hold_status === 'on_hold'
+}
 
 export type HoldStatus = 'pending_payment' | 'active' | 'expired' | 'refunded' | 'cancelled'
 

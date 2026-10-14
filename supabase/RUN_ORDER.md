@@ -12,7 +12,8 @@ Do not skip `schema.sql` on a brand-new project. If the schema is already applie
 | 5 | `migration_bookings.sql` | `bookings` table, slot uniqueness, booking RLS, and booked-slots RPC. |
 | 6 | `migration_message_email.sql` | Message-email cooldown table + claim function for `notify-new-message`. |
 | 7 | `migration_rate_limits.sql` | DB rate limits for listings/messages/bookings + edge rate-limit buckets. |
-| 8 | `migration_holds.sql` | Paid holds: `holds` table, `hold_status`, fee config, booking `pending`, `expire_holds` + pg_cron. |
+| 8a | `migration_hold_compat.sql` | Minimal `listings.hold_status` + empty `holds` (select-only) so the site works with holds off. |
+| 8 | `migration_holds.sql` | Full paid holds: fees, checkout hooks, `expire_holds` + pg_cron (optional after compat). |
 | 9 | `migration_app_events.sql` | `app_events` table + `log_app_event` for ops monitoring (approvals, bookings, email failures, rate limits). |
 | 10 | `migration_launch_polish.sql` | Listing reports queue + `prepare_account_deletion` helper for account delete. |
 | 11 | `migration_indexes.sql` | Query indexes (safe if optional tables missing). |

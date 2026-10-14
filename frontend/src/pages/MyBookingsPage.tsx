@@ -58,7 +58,7 @@ export function MyBookingsPage() {
       const { from, to } = rangeForPage(page, PAGE_SIZE.bookings)
       const bookingsRes = await supabase
         .from('bookings')
-        .select('*, listings(id, title, city, address, image_urls, hold_status)')
+          .select('*, listings(id, title, city, address, image_urls)')
         .or(`visitor_id.eq.${user.id},owner_id.eq.${user.id}`)
         .order('meeting_at', { ascending: true })
         .range(from, to)
