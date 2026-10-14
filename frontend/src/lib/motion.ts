@@ -85,18 +85,16 @@ export function pageVariants(reduced: boolean | null): Variants {
 }
 
 export function bubbleVariants(reduced: boolean | null, mine: boolean): Variants {
+  // Soft slide only on the Y axis — avoid X/scale transforms that can paint
+  // outside the clipped message list and cover the composer.
   return {
     initial: {
       opacity: 0,
-      y: reduced ? 0 : 10,
-      x: reduced ? 0 : mine ? 8 : -8,
-      scale: reduced ? 1 : 0.98,
+      y: reduced ? 0 : mine ? 8 : 10,
     },
     animate: {
       opacity: 1,
       y: 0,
-      x: 0,
-      scale: 1,
       transition: { duration: reduced ? 0.01 : DURATION.base, ease: EASE_OUT },
     },
   }

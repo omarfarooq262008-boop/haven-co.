@@ -128,12 +128,18 @@ export function Layout() {
         id="main-content"
         className={
           isMessages
-            ? 'relative z-10 flex min-h-0 flex-1 flex-col py-3 md:py-4'
+            ? 'relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden py-3 md:py-4'
             : 'relative z-10 py-10 md:py-12'
         }
         tabIndex={-1}
       >
-        <div className={isMessages ? 'page-container flex min-h-0 flex-1 flex-col' : 'page-container'}>
+        <div
+          className={
+            isMessages
+              ? 'page-container flex min-h-0 flex-1 flex-col overflow-hidden'
+              : 'page-container'
+          }
+        >
           <PageFade />
         </div>
       </main>

@@ -576,6 +576,7 @@ export function MessagesPage() {
     setMessages((prev) => [...prev, optimistic])
     applyInboxMessage(optimistic, user.id, conversationId)
     setBody('')
+    if (composerRef.current) composerRef.current.style.height = ''
     setReplyTo(null)
     setSendError(null)
     stickToBottomRef.current = true
@@ -753,7 +754,7 @@ export function MessagesPage() {
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-start gap-3 border-b border-line px-3 py-3 sm:px-4">
+              <div className="messages-chat-header flex items-start gap-3 border-b border-line px-3 py-3 sm:px-4">
                 <Link
                   to="/messages"
                   className="mt-0.5 rounded-lg px-2 py-1 text-sm font-semibold text-gold-dark md:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
@@ -776,9 +777,10 @@ export function MessagesPage() {
                 </div>
               </div>
 
-              <div className="relative min-h-0 flex-1">
+              <div className="messages-chat-body">
                 <div
                   ref={listRef}
+                  data-testid="messages-scroll"
                   className="messages-scroll space-y-3 p-3 sm:p-4"
                   onScroll={onListScroll}
                 >
@@ -825,70 +827,79 @@ export function MessagesPage() {
                       </AnimatePresence>
                     </>
                   )}
-                  <div ref={bottomRef} />
+                  <div ref={bottomRef} aria-hidden="true" />
                 </div>
 
                 {showJumpNew ? (
                   <button
                     type="button"
                     onClick={() => scrollToBottom(true)}
-                    className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-sand shadow-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
+                    className="pointer-events-auto absolute bottom-3 left-1/2 z-[15] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-sand shadow-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
                   >
                     New messages
                   </button>
                 ) : null}
               </div>
 
-              {replyTo ? (
-                <div className="flex shrink-0 items-start gap-2 border-t border-line bg-sand/60 px-3 py-2">
-                  <div className="min-w-0 flex-1 border-l-2 border-gold pl-2">
-                    <p className="text-xs font-semibold text-ink">
-                      Replying to{' '}
-                      {replyTo.sender_id === user.id
-                        ? 'yourself'
-                        : nameById.get(replyTo.sender_id) ?? active?.other_name ?? 'User'}
-                    </p>
-                    <p className="truncate text-xs text-ink-soft">{previewMessageBody(replyTo.body)}</p>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Cancel reply"
-                    onClick={() => setReplyTo(null)}
-                    className="rounded-lg px-2 py-1 text-sm font-semibold text-ink-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : null}
-
-              <form
-                onSubmit={(e) => void sendMessage(e)}
-                className="shrink-0 border-t border-line bg-white/80 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+              <div
+                className="messages-composer border-t border-line pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                data-testid="messages-composer"
               >
-                <div className="flex items-end gap-2">
-                  <label htmlFor="chat-composer" className="sr-only">
-                    Message
-                  </label>
-                  <textarea
-                    id="chat-composer"
-                    ref={composerRef}
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    onKeyDown={onComposerKeyDown}
-                    placeholder="Write a message…"
-                    maxLength={LIMITS.messageMax}
-                    rows={1}
-                    className="max-h-32 min-h-[42px] flex-1 resize-y rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-gold focus-visible:ring-2 focus-visible:ring-gold"
-                  />
-                  <button
-                    type="submit"
-                    className="btn-anim rounded-xl bg-gold px-4 py-2 font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
-                  >
-                    Send
-                  </button>
-                </div>
-                {sendError ? <p className="mt-2 text-sm text-red-700">{sendError}</p> : null}
-              </form>
+                {replyTo ? (
+                  <div className="flex items-start gap-2 border-b border-line bg-sand/70 px-3 py-2">
+                    <div className="min-w-0 flex-1 border-l-2 border-gold pl-2">
+                      <p className="text-xs font-semibold text-ink">
+                        Replying to{' '}
+                        {replyTo.sender_id === user.id
+                          ? 'yourself'
+                          : nameById.get(replyTo.sender_id) ?? active?.other_name ?? 'User'}
+                      </p>
+                      <p className="truncate text-xs text-ink-soft">
+                        {previewMessageBody(replyTo.body)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Cancel reply"
+                      onClick={() => setReplyTo(null)}
+                      className="rounded-lg px-2 py-1 text-sm font-semibold text-ink-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : null}
+
+                <form onSubmit={(e) => void sendMessage(e)} className="p-3">
+                  <div className="flex items-end gap-2">
+                    <label htmlFor="chat-composer" className="sr-only">
+                      Message
+                    </label>
+                    <textarea
+                      id="chat-composer"
+                      ref={composerRef}
+                      value={body}
+                      onChange={(e) => {
+                        setBody(e.target.value)
+                        const el = e.target
+                        el.style.height = 'auto'
+                        el.style.height = `${Math.min(el.scrollHeight, 104)}px`
+                      }}
+                      onKeyDown={onComposerKeyDown}
+                      placeholder="Write a message…"
+                      maxLength={LIMITS.messageMax}
+                      rows={1}
+                      className="messages-composer-input flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-gold focus-visible:ring-2 focus-visible:ring-gold"
+                    />
+                    <button
+                      type="submit"
+                      className="btn-anim shrink-0 rounded-xl bg-gold px-4 py-2 font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
+                    >
+                      Send
+                    </button>
+                  </div>
+                  {sendError ? <p className="mt-2 text-sm text-red-700">{sendError}</p> : null}
+                </form>
+              </div>
             </>
           )}
         </section>
@@ -958,37 +969,27 @@ function MessageBubble(props: {
       variants={bubbleVariants(reduced, mine)}
       initial="initial"
       animate="animate"
-      className={`group relative flex ${mine ? 'justify-end' : 'justify-start'}`}
+      className={`messages-bubble-wrap group flex ${mine ? 'justify-end' : 'justify-start'}`}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerCancel={clearLongPress}
       onPointerLeave={clearLongPress}
     >
-      {!mine ? (
-        <button
-          type="button"
-          aria-label="Reply"
-          onClick={onReply}
-          className="absolute -left-1 top-1 hidden rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-ink shadow-sm opacity-0 transition group-hover:opacity-100 md:inline-block focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
-        >
-          Reply
-        </button>
-      ) : (
-        <button
-          type="button"
-          aria-label="Reply"
-          onClick={onReply}
-          className="absolute -right-1 top-1 hidden rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-ink shadow-sm opacity-0 transition group-hover:opacity-100 md:inline-block focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
-        >
-          Reply
-        </button>
-      )}
-
       <div
-        className={`max-w-[min(80%,24rem)] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`messages-bubble rounded-2xl px-3 py-2 text-sm shadow-sm ${
           mine ? 'rounded-br-md bg-ink text-sand' : 'rounded-bl-md bg-sand text-ink'
         } ${highlighted ? 'messages-highlight' : ''} ${m.status === 'sending' ? 'opacity-70' : ''}`}
       >
+        <div className={`mb-1 ${mine ? 'text-right' : 'text-left'}`}>
+          <button
+            type="button"
+            aria-label="Reply"
+            onClick={onReply}
+            className="hidden rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-ink shadow-sm opacity-0 transition group-hover:opacity-100 md:inline-block focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-gold-dark)]"
+          >
+            Reply
+          </button>
+        </div>
         {m.reply_to_id ? (
           m.reply_to ? (
             <button

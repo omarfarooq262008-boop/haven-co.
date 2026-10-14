@@ -159,27 +159,29 @@
   min-height: 0;
 }
 
-/* Fixed-height chat shell — list + composer stay put; only the transcript scrolls */
+/* Fixed-height chat shell — page must not grow; only the transcript scrolls */
 .messages-shell {
   display: flex;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
   height: calc(100dvh - 5.5rem);
   max-height: calc(100dvh - 5.5rem);
+  overflow: hidden;
 }
 
 .messages-grid {
   display: grid;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   gap: 1rem;
   grid-template-columns: 1fr;
+  overflow: hidden;
 }
 
 @media (min-width: 768px) {
   .messages-grid {
-    grid-template-columns: minmax(260px, 300px) 1fr;
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   }
 }
 
@@ -187,17 +189,67 @@
   display: flex;
   min-height: 0;
   min-width: 0;
+  height: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Chat panel: header | scroll list | composer — list is the only scroller */
+.messages-chat-header {
+  flex: 0 0 auto;
+}
+
+.messages-chat-body {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
   flex-direction: column;
   overflow: hidden;
 }
 
 .messages-scroll {
   min-height: 0;
-  flex: 1 1 auto;
+  min-width: 0;
+  flex: 1 1 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.messages-composer {
+  position: relative;
+  z-index: 20;
+  flex: 0 0 auto;
+  background: rgb(255 255 255 / 0.97);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.messages-composer-input {
+  display: block;
+  width: 100%;
+  max-height: 6.5rem; /* ~4 lines */
+  min-height: 2.625rem;
+  overflow-y: auto;
+  resize: none;
+  overflow-wrap: anywhere;
+  field-sizing: content;
+}
+
+.messages-bubble-wrap {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  /* Contain Framer Motion transforms inside the scroller */
+  overflow: visible;
+}
+
+.messages-bubble {
+  max-width: 75%;
+  min-width: 0;
 }
 
 .messages-bubble-text {
