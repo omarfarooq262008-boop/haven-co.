@@ -17,15 +17,34 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    height: 100%;
   }
 
   body {
     margin: 0;
-    min-height: 100vh;
+    min-height: 100%;
+    min-height: 100dvh;
     font-family: var(--font-sans);
     color: var(--color-ink);
     /* Fallback if the photo never paints */
     background: linear-gradient(165deg, #1a2744 0%, #44566f 42%, #c9a24d 100%);
+  }
+
+  /* Flex height chain so the footer can pin to the viewport bottom */
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-root {
+    display: flex;
+    flex: 1 0 auto;
+    width: 100%;
+    min-height: 100%;
+    min-height: 100dvh;
+    flex-direction: column;
   }
 
   h1,
@@ -125,7 +144,23 @@
 .app-shell {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  display: flex;
+  flex: 1 0 auto;
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+  flex-direction: column;
+}
+
+/* Grow between header and footer so short pages still pin the bar to the bottom */
+.app-shell > main {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.app-shell > footer {
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
 /* Shared page gutters — navbar, filters, grid share the same edges */

@@ -129,7 +129,7 @@ export function Layout() {
         </div>
       </main>
 
-      <footer className="relative z-10 border-t border-white/40 bg-white/90">
+      <footer className="relative z-10 mt-auto border-t border-white/40 bg-white/90">
         <div className="page-container flex flex-col gap-3 py-6 text-sm text-ink sm:flex-row sm:items-center sm:justify-between">
           <p className="font-display font-semibold text-ink">
             Haven <span className="text-gold-dark">&</span> Co.

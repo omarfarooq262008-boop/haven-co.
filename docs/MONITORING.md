@@ -113,7 +113,11 @@ If you only want Sentry UI: **Alerts** → filter issues containing `sendEmail` 
    - Optionally **Deployment Ready** for peace of mind
 4. To connect Slack: **Integrations** → search **Slack** → **Add** → choose channel → ensure “Deployment Failed” is enabled for this project
 
-Confirm production builds set release: Vercel provides `VERCEL_GIT_COMMIT_SHA` automatically; Vite maps it to `VITE_APP_RELEASE` for Sentry.
+Confirm production builds set release: Vercel provides `VERCEL_GIT_COMMIT_SHA` automatically; Vite maps it to `VITE_APP_RELEASE` for Sentry (`haven-co@<sha>`). Environment is `production` or `preview` from `VERCEL_ENV`.
+
+Source maps: set build secrets `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` on Vercel. The Vite plugin uploads **hidden** maps and deletes them from `dist/` so they are not public. If any of those three is missing, the build skips upload and does not emit maps.
+
+Admin verification: while signed in as admin, open `/sentry-test` → **Throw frontend error** / **Send test message**. Non-admins see the 404 page.
 
 ---
 

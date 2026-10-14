@@ -55,6 +55,9 @@ const ContactPage = lazy(() =>
 const NotFoundPage = lazy(() =>
   import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 )
+const SentryTestPage = lazy(() =>
+  import('./pages/SentryTestPage').then((m) => ({ default: m.SentryTestPage })),
+)
 
 function RouteFallback() {
   return (
@@ -66,6 +69,7 @@ function RouteFallback() {
 
 export default function App() {
   return (
+    <div className="app-root">
     <ErrorBoundary>
       <AuthProvider>
         <BrowserRouter>
@@ -90,6 +94,7 @@ export default function App() {
                 <Route path="terms" element={<TermsPage />} />
                 <Route path="contact" element={<ContactPage />} />
                 <Route path="admin" element={<AdminPage />} />
+                <Route path="sentry-test" element={<SentryTestPage />} />
                 <Route path="messages" element={<MessagesPage />} />
                 <Route path="messages/:conversationId" element={<MessagesPage />} />
                 <Route path="*" element={<NotFoundPage />} />
@@ -99,5 +104,6 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </ErrorBoundary>
+    </div>
   )
 }

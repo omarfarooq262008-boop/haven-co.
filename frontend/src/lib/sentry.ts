@@ -2,8 +2,9 @@ import * as Sentry from '@sentry/react'
 
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const PHONE_RE = /(?:\+?\d[\d\s().-]{7,}\d)/g
+/** Keys that may carry emails, phones, or chat/form message text. */
 const SENSITIVE_KEYS =
-  /^(email|e-mail|phone|mobile|tel|message|body|note|password|token|secret|authorization|visitor_email|visitor_phone|visitor_name|full_name)$/i
+  /^(email|e-mail|phone|mobile|tel|message|messages|body|note|text|content|msg|chat|comment|password|token|secret|authorization|visitor_email|visitor_phone|visitor_name|full_name|description)$/i
 
 function scrubString(value: string): string {
   return value.replace(EMAIL_RE, '[email]').replace(PHONE_RE, '[phone]')
@@ -27,6 +28,21 @@ function scrubUnknown(value: unknown, depth = 0): unknown {
   return value
 }
 
+function resolveEnvironment(): string {
+  const vercelEnv = (import.meta.env.VITE_VERCEL_ENV as string | undefined)?.trim()
+  if (vercelEnv === 'production' || vercelEnv === 'preview') return vercelEnv
+  if (import.meta.env.PROD) return 'production'
+  return 'development'
+}
+
+function resolveRelease(): string | undefined {
+  const sha =
+    (import.meta.env.VITE_APP_RELEASE as string | undefined)?.trim() ||
+    (import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined)?.trim() ||
+    ''
+  return sha ? `haven-co@${sha}` : undefined
+}
+
 export function isSentryEnabled(): boolean {
   return Boolean(import.meta.env.VITE_SENTRY_DSN?.trim())
 }
@@ -37,15 +53,10 @@ export function initSentry(): void {
   if (!dsn) return
 
   try {
-    const release =
-      (import.meta.env.VITE_APP_RELEASE as string | undefined)?.trim() ||
-      (import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined)?.trim() ||
-      undefined
-
     Sentry.init({
       dsn,
-      environment: import.meta.env.MODE,
-      release: release ? `haven-co@${release}` : undefined,
+      environment: resolveEnvironment(),
+      release: resolveRelease(),
       // Performance tracing at 10% — keep cost low; PII still scrubbed below.
       tracesSampleRate: 0.1,
       dataCollection: {
@@ -62,10 +73,19 @@ export function initSentry(): void {
       beforeBreadcrumb(breadcrumb) {
         if (breadcrumb.message) breadcrumb.message = scrubString(breadcrumb.message)
         if (breadcrumb.data) {
-          breadcrumb.data = scrubUnknown(breadcrumb.data) as Record<string, unknown>
+          const data = { ...breadcrumb.data } as Record<string, unknown>
+          delete data.request_body
+          delete data.response_body
+          delete data.body
+          delete data['Request Body']
+          delete data['Response Body']
+          breadcrumb.data = scrubUnknown(data) as Record<string, unknown>
         }
-        // Drop console breadcrumbs that often include form / chat content
+        // Drop noisy / high-risk breadcrumbs that often include form or chat content
         if (breadcrumb.category === 'console' && breadcrumb.level === 'log') {
+          return null
+        }
+        if (breadcrumb.category === 'ui.input' || breadcrumb.category === 'ui.input.keypress') {
           return null
         }
         return breadcrumb
@@ -108,6 +128,15 @@ export function initSentry(): void {
           }
         }
 
+        // Never attach breadcrumbs that still look like chat payloads
+        if (event.breadcrumbs) {
+          event.breadcrumbs = event.breadcrumbs.map((b) => {
+            if (b.data) b.data = scrubUnknown(b.data) as typeof b.data
+            if (b.message) b.message = scrubString(b.message)
+            return b
+          })
+        }
+
         return event
       },
     })
@@ -125,6 +154,19 @@ export function captureAppError(error: unknown, componentStack?: string | null):
     })
   } catch {
     /* ignore */
+  }
+}
+
+/** Admin test route helper — no-op when DSN is unset. */
+export function sendTestMessage(message = 'Haven Sentry test message'): string {
+  if (!isSentryEnabled()) {
+    return 'Sentry is not configured (VITE_SENTRY_DSN missing).'
+  }
+  try {
+    Sentry.captureMessage(message, 'info')
+    return 'Test message sent to Sentry.'
+  } catch {
+    return 'Could not send test message.'
   }
 }
 
