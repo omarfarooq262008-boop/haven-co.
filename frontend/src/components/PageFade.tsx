@@ -19,7 +19,12 @@ export function PageFade() {
 
   // Home owns its own slide-in; form/messages skip page fade for performance
   if (reduced || heavy || location.pathname === '/') {
-    return <div key={location.pathname}>{outlet}</div>
+    const fillChat = location.pathname.startsWith('/messages')
+    return (
+      <div key={location.pathname} className={fillChat ? 'flex min-h-0 flex-1 flex-col' : undefined}>
+        {outlet}
+      </div>
+    )
   }
 
   return (

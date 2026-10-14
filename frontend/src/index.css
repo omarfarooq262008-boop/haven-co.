@@ -156,6 +156,101 @@
 .app-shell > main {
   flex: 1 1 auto;
   width: 100%;
+  min-height: 0;
+}
+
+/* Fixed-height chat shell — list + composer stay put; only the transcript scrolls */
+.messages-shell {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: calc(100dvh - 5.5rem);
+  max-height: calc(100dvh - 5.5rem);
+}
+
+.messages-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .messages-grid {
+    grid-template-columns: minmax(260px, 300px) 1fr;
+  }
+}
+
+.messages-pane {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.messages-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.messages-bubble-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.messages-quote {
+  border-left: 3px solid var(--color-gold);
+  margin-bottom: 0.35rem;
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  background: rgb(20 32 51 / 0.06);
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.messages-quote--mine {
+  background: rgb(255 255 255 / 0.12);
+  border-left-color: var(--color-gold);
+}
+
+.messages-quote-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.messages-highlight {
+  animation: messages-flash 1.2s ease;
+}
+
+@keyframes messages-flash {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  30%,
+  60% {
+    box-shadow: 0 0 0 3px rgb(201 162 77 / 0.55);
+  }
+}
+
+@media (max-width: 767px) {
+  .messages-shell--chat-open .messages-list-pane {
+    display: none;
+  }
+  .messages-shell:not(.messages-shell--chat-open) .messages-chat-pane {
+    display: none;
+  }
 }
 
 .app-shell > footer {

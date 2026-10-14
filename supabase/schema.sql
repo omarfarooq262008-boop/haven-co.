@@ -54,10 +54,12 @@ create table if not exists public.messages (
   conversation_id uuid not null references public.conversations (id) on delete cascade,
   sender_id uuid not null references auth.users (id) on delete cascade,
   body text not null check (char_length(trim(body)) between 1 and 2000),
+  reply_to_id uuid references public.messages (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
 create index if not exists messages_conversation_id_idx on public.messages (conversation_id, created_at);
+create index if not exists messages_reply_to_id_idx on public.messages (reply_to_id) where reply_to_id is not null;
 
 create table if not exists public.message_email_cooldowns (
   conversation_id uuid primary key references public.conversations (id) on delete cascade,
@@ -665,6 +667,36 @@ $$;
 
 revoke all on function public.check_edge_rate_limit(text, int, int) from public;
 grant execute on function public.check_edge_rate_limit(text, int, int) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Message reply same-conversation guard
+-- ---------------------------------------------------------------------------
+
+create or replace function public.check_message_reply_same_conversation()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.reply_to_id is null then
+    return new;
+  end if;
+  if not exists (
+    select 1 from public.messages m
+    where m.id = new.reply_to_id and m.conversation_id = new.conversation_id
+  ) then
+    raise exception 'reply_to_id must reference a message in the same conversation'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists check_message_reply_same_conversation_trg on public.messages;
+create trigger check_message_reply_same_conversation_trg
+  before insert or update of reply_to_id, conversation_id
+  on public.messages
+  for each row
+  execute function public.check_message_reply_same_conversation();
 
 -- ---------------------------------------------------------------------------
 -- Realtime on messages

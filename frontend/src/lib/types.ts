@@ -41,6 +41,10 @@ export type Conversation = {
   listings?: Pick<Listing, 'id' | 'title' | 'city' | 'image_urls'> | null
   /** Other participant display name (filled on client) */
   other_name?: string
+  /** Latest message preview (client) */
+  last_preview?: string
+  last_activity_at?: string
+  unread?: boolean
 }
 
 export type Message = {
@@ -49,6 +53,7 @@ export type Message = {
   sender_id: string
   body: string
   created_at: string
+  reply_to_id?: string | null
 }
 
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled'

@@ -19,6 +19,7 @@ export function Layout() {
     pathname.includes('/edit') ||
     pathname.endsWith('/book') ||
     pathname === '/account'
+  const isMessages = pathname.startsWith('/messages')
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16)
@@ -123,33 +124,43 @@ export function Layout() {
         </div>
       </header>
 
-      <main id="main-content" className="relative z-10 py-10 md:py-12" tabIndex={-1}>
-        <div className="page-container">
+      <main
+        id="main-content"
+        className={
+          isMessages
+            ? 'relative z-10 flex min-h-0 flex-1 flex-col py-3 md:py-4'
+            : 'relative z-10 py-10 md:py-12'
+        }
+        tabIndex={-1}
+      >
+        <div className={isMessages ? 'page-container flex min-h-0 flex-1 flex-col' : 'page-container'}>
           <PageFade />
         </div>
       </main>
 
-      <footer className="relative z-10 mt-auto border-t border-white/40 bg-white/90">
-        <div className="page-container flex flex-col gap-3 py-6 text-sm text-ink sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-display font-semibold text-ink">
-            Haven <span className="text-gold-dark">&</span> Co.
-          </p>
-          <nav className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Footer">
-            <Link to="/privacy" className="font-medium text-ink underline-offset-2 hover:underline">
-              Privacy
-            </Link>
-            <Link to="/terms" className="font-medium text-ink underline-offset-2 hover:underline">
-              Terms
-            </Link>
-            <Link to="/contact" className="font-medium text-ink underline-offset-2 hover:underline">
-              Contact
-            </Link>
-            <Link to="/status" className="font-medium text-ink underline-offset-2 hover:underline">
-              Status
-            </Link>
-          </nav>
-        </div>
-      </footer>
+      {!isMessages ? (
+        <footer className="relative z-10 mt-auto border-t border-white/40 bg-white/90">
+          <div className="page-container flex flex-col gap-3 py-6 text-sm text-ink sm:flex-row sm:items-center sm:justify-between">
+            <p className="font-display font-semibold text-ink">
+              Haven <span className="text-gold-dark">&</span> Co.
+            </p>
+            <nav className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Footer">
+              <Link to="/privacy" className="font-medium text-ink underline-offset-2 hover:underline">
+                Privacy
+              </Link>
+              <Link to="/terms" className="font-medium text-ink underline-offset-2 hover:underline">
+                Terms
+              </Link>
+              <Link to="/contact" className="font-medium text-ink underline-offset-2 hover:underline">
+                Contact
+              </Link>
+              <Link to="/status" className="font-medium text-ink underline-offset-2 hover:underline">
+                Status
+              </Link>
+            </nav>
+          </div>
+        </footer>
+      ) : null}
     </div>
   )
 }
