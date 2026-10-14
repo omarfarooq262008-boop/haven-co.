@@ -80,9 +80,12 @@ export type HoldRow = {
   visitor_id: string
   amount: number
   currency: string
-  status: 'pending_payment' | 'active' | 'expired' | 'refunded' | 'cancelled'
+  status: 'pending_payment' | 'active' | 'expired' | 'refunded' | 'cancelled' | 'failed'
   provider: string
   provider_reference: string | null
+  checkout_url?: string | null
+  paid_at?: string | null
+  refunded_at?: string | null
   expires_at: string
   created_at: string
 }

@@ -126,10 +126,11 @@ npx supabase functions deploy notify-listing-review --use-api
    ```bash
    npx supabase functions deploy create-hold-checkout --use-api
    npx supabase functions deploy payment-webhook --use-api
+   npx supabase functions deploy mock-checkout --use-api
    npx supabase functions deploy cancel-hold --use-api
    ```
 
-5. Test with mock: open a listing → **Hold this property** → fill the meeting form → **Pay and book** → on the mock checkout page choose **Pay successfully** → land on `/payment/result?status=success` → confirm hold in **My bookings**. Owner can **Cancel hold** to refund and free the listing.
+5. Test with mock: open a listing → **Hold this property** → fill the meeting form → **Pay and book** → on the mock checkout page choose **Pay successfully** → land on `/payment/success` (polls until the webhook activates the hold) → confirm hold in **My bookings**. Owner can **Cancel hold** to refund and free the listing. Try **Payment fails** / **Cancel** to hit `/payment/failed` and `/payment/cancelled`.
 
 ### 8. Monitoring
 

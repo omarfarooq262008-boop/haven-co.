@@ -8,9 +8,15 @@ import { Seo } from '../components/Seo'
 import { useAuth } from '../context/AuthContext'
 import { logAppEvent } from '../lib/appEvents'
 import { formatListingPrice } from '../lib/format'
+import {
+  cancelHold,
+  formatHoldFee,
+  holdStatusLabel,
+  type HoldStatus,
+} from '../lib/holds'
 import { hasMoreRows, PAGE_SIZE, rangeForPage } from '../lib/pagination'
 import { supabase } from '../lib/supabase'
-import type { Listing } from '../lib/types'
+import type { HoldRow, Listing } from '../lib/types'
 
 type ReportRow = {
   id: string
@@ -23,22 +29,65 @@ type ReportRow = {
   listings?: Pick<Listing, 'id' | 'title' | 'city' | 'image_urls'> | null
 }
 
+type AdminHoldRow = HoldRow & {
+  listings?: Pick<Listing, 'id' | 'title' | 'city'> | null
+}
+
+const HOLD_FILTERS = [
+  'all',
+  'pending_payment',
+  'active',
+  'expired',
+  'refunded',
+  'cancelled',
+  'failed',
+] as const
+
+type HoldFilter = (typeof HOLD_FILTERS)[number]
+
 export function AdminPage() {
   const { user, profile, loading: authLoading } = useAuth()
-  const [tab, setTab] = useState<'listings' | 'reports'>('listings')
+  const [tab, setTab] = useState<'listings' | 'reports' | 'holds'>('listings')
   const [listings, setListings] = useState<Listing[]>([])
   const [reports, setReports] = useState<ReportRow[]>([])
+  const [holds, setHolds] = useState<AdminHoldRow[]>([])
+  const [holdFilter, setHoldFilter] = useState<HoldFilter>('all')
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [listingsPage, setListingsPage] = useState(0)
   const [reportsPage, setReportsPage] = useState(0)
+  const [holdsPage, setHoldsPage] = useState(0)
   const [hasMoreListings, setHasMoreListings] = useState(false)
   const [hasMoreReports, setHasMoreReports] = useState(false)
+  const [hasMoreHolds, setHasMoreHolds] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [rejectDrafts, setRejectDrafts] = useState<Record<string, string>>({})
 
   const isAdmin = Boolean(profile?.is_admin)
+
+  const loadHolds = useCallback(
+    async (page: number, filter: HoldFilter, append: boolean) => {
+      const { from, to } = rangeForPage(page, PAGE_SIZE.admin)
+      let q = supabase
+        .from('holds')
+        .select('*, listings(id, title, city)')
+        .order('created_at', { ascending: false })
+        .range(from, to)
+      if (filter !== 'all') q = q.eq('status', filter)
+      const { data, error: qError } = await q
+      if (qError) {
+        console.error('[admin] holds', qError.message)
+        setError(qError.message)
+        return
+      }
+      const rows = (data ?? []) as AdminHoldRow[]
+      setHolds((prev) => (append ? [...prev, ...rows] : rows))
+      setHasMoreHolds(hasMoreRows(rows.length, PAGE_SIZE.admin))
+      setHoldsPage(page)
+    },
+    [],
+  )
 
   const loadInitial = useCallback(async () => {
     if (!user || !isAdmin) return
@@ -46,6 +95,7 @@ export function AdminPage() {
     setError(null)
     setListingsPage(0)
     setReportsPage(0)
+    setHoldsPage(0)
 
     const lr = rangeForPage(0, PAGE_SIZE.admin)
     const rr = rangeForPage(0, PAGE_SIZE.admin)
@@ -77,8 +127,12 @@ export function AdminPage() {
       setReports(rows)
       setHasMoreReports(hasMoreRows(rows.length, PAGE_SIZE.admin))
     }
+
+    await loadHolds(0, holdFilter, false)
     setLoading(false)
-  }, [user, isAdmin])
+    // holdFilter intentionally omitted — filter changes reload holds only (see below)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isAdmin, loadHolds])
 
   async function loadMoreListings() {
     const next = listingsPage + 1
@@ -122,9 +176,24 @@ export function AdminPage() {
     setHasMoreReports(hasMoreRows(rows.length, PAGE_SIZE.admin))
   }
 
+  async function loadMoreHolds() {
+    setLoadingMore(true)
+    await loadHolds(holdsPage + 1, holdFilter, true)
+    setLoadingMore(false)
+  }
+
   useEffect(() => {
     void loadInitial()
   }, [loadInitial])
+
+  useEffect(() => {
+    if (!user || !isAdmin || tab !== 'holds') return
+    void (async () => {
+      setLoadingMore(true)
+      await loadHolds(0, holdFilter, false)
+      setLoadingMore(false)
+    })()
+  }, [holdFilter, tab, user, isAdmin, loadHolds])
 
   if (authLoading) return <p className="text-ink-soft">Checking your account…</p>
   if (!user) return <Navigate to="/login" replace />
@@ -179,12 +248,44 @@ export function AdminPage() {
     setReports((prev) => prev.filter((r) => r.id !== report.id))
   }
 
+  async function adminCancelHold(hold: AdminHoldRow) {
+    if (
+      !window.confirm(
+        hold.status === 'active'
+          ? 'Cancel this hold and refund the visitor?'
+          : 'Cancel this unpaid hold?',
+      )
+    ) {
+      return
+    }
+    setBusyId(hold.id)
+    setError(null)
+    const result = await cancelHold(hold.id)
+    setBusyId(null)
+    if ('error' in result) {
+      setError(result.error)
+      return
+    }
+    void logAppEvent(
+      hold.status === 'active' ? 'hold_refunded' : 'hold_cancelled',
+      'AdminPage',
+      { hold_id: hold.id, listing_id: hold.listing_id },
+    )
+    setHolds((prev) =>
+      prev.map((h) =>
+        h.id === hold.id
+          ? { ...h, status: hold.status === 'active' ? 'refunded' : 'cancelled' }
+          : h,
+      ),
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Seo title="Admin" description="Review pending listings and user reports." path="/admin" noIndex />
       <div className="glass-panel rounded-2xl px-5 py-4">
         <h1 className="font-display text-3xl font-bold text-ink">Admin</h1>
-        <p className="mt-1 text-sm text-ink-soft">Review pending listings and safety reports.</p>
+        <p className="mt-1 text-sm text-ink-soft">Review pending listings, holds, and safety reports.</p>
         <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Admin sections">
           <button
             type="button"
@@ -197,6 +298,18 @@ export function AdminPage() {
           >
             Pending listings ({listings.length}
             {hasMoreListings ? '+' : ''})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'holds'}
+            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
+              tab === 'holds' ? 'bg-ink text-sand' : 'border border-line bg-white/70 text-ink'
+            }`}
+            onClick={() => setTab('holds')}
+          >
+            Holds ({holds.length}
+            {hasMoreHolds ? '+' : ''})
           </button>
           <button
             type="button"
@@ -220,7 +333,84 @@ export function AdminPage() {
       )}
 
       <DataState loading={loading} onRetry={() => void loadInitial()} loadingMessage="Loading admin queue…">
-        {tab === 'listings' ? (
+        {tab === 'holds' ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {HOLD_FILTERS.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setHoldFilter(f)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                    holdFilter === f ? 'bg-ink text-sand' : 'border border-line bg-white/70 text-ink'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : holdStatusLabel(f)}
+                </button>
+              ))}
+            </div>
+            {holds.length === 0 ? (
+              <p className="text-ink-soft">No holds match this filter.</p>
+            ) : (
+              <>
+                <ul className="space-y-3">
+                  {holds.map((hold) => (
+                    <li key={hold.id} className="glass-card space-y-2 rounded-2xl p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-950">
+                          {holdStatusLabel(hold.status as HoldStatus)}
+                        </span>
+                        <span className="text-sm font-semibold text-ink">
+                          {formatHoldFee(hold.amount, hold.currency)}
+                        </span>
+                        <span className="text-xs text-ink-soft">via {hold.provider}</span>
+                      </div>
+                      {hold.listings ? (
+                        <Link
+                          to={`/listings/${hold.listings.id}`}
+                          className="font-semibold text-ink hover:text-gold-dark"
+                        >
+                          {hold.listings.title}
+                        </Link>
+                      ) : (
+                        <p className="font-semibold text-ink">Listing {hold.listing_id}</p>
+                      )}
+                      <p className="text-xs text-ink-soft">
+                        Created {new Date(hold.created_at).toLocaleString()} · Expires{' '}
+                        {new Date(hold.expires_at).toLocaleString()}
+                        {hold.provider_reference
+                          ? ` · Ref ${hold.provider_reference.slice(0, 16)}…`
+                          : ''}
+                      </p>
+                      {(hold.status === 'active' || hold.status === 'pending_payment') && (
+                        <button
+                          type="button"
+                          disabled={busyId === hold.id}
+                          onClick={() => void adminCancelHold(hold)}
+                          className="btn-anim rounded-xl border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
+                        >
+                          {busyId === hold.id ? 'Cancelling…' : 'Cancel hold'}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {hasMoreHolds ? (
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      disabled={loadingMore}
+                      onClick={() => void loadMoreHolds()}
+                      className="btn-anim rounded-xl border border-line px-5 py-2 text-sm font-semibold text-ink hover:bg-sand disabled:opacity-60"
+                    >
+                      {loadingMore ? 'Loading…' : 'Load more'}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : tab === 'listings' ? (
           listings.length === 0 ? (
             <p className="text-ink-soft">No listings waiting for review.</p>
           ) : (

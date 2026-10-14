@@ -1,6 +1,6 @@
--- Haven & Co. — Paid property holds
+-- Haven & Co. — Paid property holds (full stack)
 -- Paste into Supabase → SQL Editor → Run
--- Safe to re-run.
+-- Safe to re-run. Compatible with migration_hold_compat.sql / partial holds schema.
 
 -- ---------------------------------------------------------------------------
 -- Platform config (single hold fee — change here)
@@ -23,7 +23,6 @@ create policy "Anyone can read platform_config"
   on public.platform_config for select
   to anon, authenticated
   using (true);
--- No insert/update/delete from the browser
 
 create or replace function public.get_hold_fee_pkr()
 returns integer
@@ -49,7 +48,7 @@ revoke all on function public.get_hold_fee_pkr() from public;
 grant execute on function public.get_hold_fee_pkr() to authenticated, anon, service_role;
 
 -- ---------------------------------------------------------------------------
--- Listings: hold_status
+-- listings.hold_status
 -- ---------------------------------------------------------------------------
 
 alter table public.listings
@@ -67,7 +66,6 @@ alter table public.listings
 
 create index if not exists listings_hold_status_idx on public.listings (hold_status);
 
--- Owners / clients cannot change hold_status; service_role, cron, and admins can
 create or replace function public.protect_listing_status()
 returns trigger
 language plpgsql
@@ -75,7 +73,6 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Internal jobs (expire_holds) and Edge Functions (service_role)
   if current_setting('app.bypass_listing_protect', true) = 'on'
      or coalesce(auth.role(), '') = 'service_role' then
     if tg_op = 'UPDATE' and not public.is_admin() then
@@ -115,7 +112,7 @@ create trigger protect_listing_status_trg
   for each row execute function public.protect_listing_status();
 
 -- ---------------------------------------------------------------------------
--- Bookings: allow pending (hold awaiting payment)
+-- Bookings: pending (hold awaiting payment)
 -- ---------------------------------------------------------------------------
 
 alter table public.bookings drop constraint if exists bookings_status_check;
@@ -123,7 +120,6 @@ alter table public.bookings
   add constraint bookings_status_check
   check (status in ('pending', 'confirmed', 'cancelled'));
 
--- Pending and confirmed both reserve the slot
 drop index if exists bookings_listing_meeting_active_uidx;
 create unique index bookings_listing_meeting_active_uidx
   on public.bookings (listing_id, meeting_at)
@@ -138,14 +134,8 @@ as $$
 declare
   listing_row public.listings%rowtype;
 begin
-  select * into listing_row
-  from public.listings
-  where id = new.listing_id;
-
-  if not found then
-    raise exception 'Listing not found';
-  end if;
-
+  select * into listing_row from public.listings where id = new.listing_id;
+  if not found then raise exception 'Listing not found'; end if;
   new.owner_id := listing_row.owner_id;
 
   if tg_op = 'INSERT' then
@@ -158,8 +148,6 @@ begin
     if new.meeting_at <= now() then
       raise exception 'Meeting must be in the future';
     end if;
-
-    -- Service role may insert pending holds; clients always get confirmed meetings
     if auth.role() = 'service_role' and new.status = 'pending' then
       null;
     else
@@ -178,7 +166,6 @@ begin
        or new.note is distinct from old.note then
       raise exception 'Only booking status can be updated';
     end if;
-
     if new.status is distinct from old.status then
       if auth.role() = 'service_role' then
         if new.status not in ('pending', 'confirmed', 'cancelled') then
@@ -189,7 +176,6 @@ begin
       end if;
     end if;
   end if;
-
   return new;
 end;
 $$;
@@ -199,24 +185,16 @@ create trigger validate_booking_row_trg
   before insert or update on public.bookings
   for each row execute function public.validate_booking_row();
 
--- Busy slots include pending (unpaid hold) and confirmed
 create or replace function public.get_listing_booked_slots(
-  p_listing_id uuid,
-  p_from timestamptz,
-  p_to timestamptz
+  p_listing_id uuid, p_from timestamptz, p_to timestamptz
 )
 returns table (meeting_at timestamptz)
-language sql
-stable
-security definer
-set search_path = public
+language sql stable security definer set search_path = public
 as $$
-  select b.meeting_at
-  from public.bookings b
+  select b.meeting_at from public.bookings b
   where b.listing_id = p_listing_id
     and b.status in ('pending', 'confirmed')
-    and b.meeting_at >= p_from
-    and b.meeting_at < p_to
+    and b.meeting_at >= p_from and b.meeting_at < p_to
   order by b.meeting_at;
 $$;
 
@@ -224,7 +202,7 @@ revoke all on function public.get_listing_booked_slots(uuid, timestamptz, timest
 grant execute on function public.get_listing_booked_slots(uuid, timestamptz, timestamptz) to authenticated, anon;
 
 -- ---------------------------------------------------------------------------
--- Holds table
+-- Holds table (upgrade-compatible)
 -- ---------------------------------------------------------------------------
 
 create table if not exists public.holds (
@@ -232,17 +210,18 @@ create table if not exists public.holds (
   listing_id uuid not null references public.listings (id) on delete cascade,
   booking_id uuid not null references public.bookings (id) on delete cascade,
   visitor_id uuid not null references auth.users (id) on delete cascade,
-  amount integer not null check (amount > 0),
+  amount integer not null default 1 check (amount > 0),
   currency text not null default 'PKR' check (char_length(currency) between 3 and 8),
-  status text not null default 'pending_payment'
-    check (status in ('pending_payment', 'active', 'expired', 'refunded', 'cancelled')),
+  status text not null default 'pending_payment',
   provider text not null default 'mock',
   provider_reference text,
-  expires_at timestamptz not null,
+  checkout_url text,
+  expires_at timestamptz not null default (now() + interval '48 hours'),
+  paid_at timestamptz,
+  refunded_at timestamptz,
   created_at timestamptz not null default now()
 );
 
--- Rename if an older draft used bookings_id
 do $$
 begin
   if exists (
@@ -254,7 +233,21 @@ begin
   ) then
     alter table public.holds rename column bookings_id to booking_id;
   end if;
+
+  alter table public.holds add column if not exists checkout_url text;
+  alter table public.holds add column if not exists paid_at timestamptz;
+  alter table public.holds add column if not exists refunded_at timestamptz;
+  alter table public.holds add column if not exists provider text not null default 'mock';
+  alter table public.holds add column if not exists provider_reference text;
+  alter table public.holds add column if not exists expires_at timestamptz not null default (now() + interval '48 hours');
+  alter table public.holds add column if not exists created_at timestamptz not null default now();
 end $$;
+
+-- Expand status check to include 'failed'
+alter table public.holds drop constraint if exists holds_status_check;
+alter table public.holds
+  add constraint holds_status_check
+  check (status in ('pending_payment', 'active', 'expired', 'refunded', 'cancelled', 'failed'));
 
 create index if not exists holds_listing_id_idx on public.holds (listing_id);
 create index if not exists holds_booking_id_idx on public.holds (booking_id);
@@ -265,7 +258,6 @@ create unique index if not exists holds_provider_reference_uidx
   on public.holds (provider, provider_reference)
   where provider_reference is not null;
 
--- Only one active or pending hold per listing
 drop index if exists holds_one_open_per_listing_uidx;
 create unique index holds_one_open_per_listing_uidx
   on public.holds (listing_id)
@@ -275,26 +267,48 @@ alter table public.holds enable row level security;
 
 drop policy if exists "Visitors can read own holds" on public.holds;
 drop policy if exists "Owners can read listing holds" on public.holds;
+drop policy if exists "Admins can read all holds" on public.holds;
 
 create policy "Visitors can read own holds"
-  on public.holds for select
-  to authenticated
+  on public.holds for select to authenticated
   using (auth.uid() = visitor_id);
 
 create policy "Owners can read listing holds"
-  on public.holds for select
-  to authenticated
+  on public.holds for select to authenticated
   using (
     exists (
       select 1 from public.listings l
-      where l.id = holds.listing_id
-        and l.owner_id = auth.uid()
+      where l.id = holds.listing_id and l.owner_id = auth.uid()
     )
   );
--- No insert / update / delete policies → browser cannot mutate holds
+
+create policy "Admins can read all holds"
+  on public.holds for select to authenticated
+  using (public.is_admin());
+
+-- No insert/update/delete for browser
 
 -- ---------------------------------------------------------------------------
--- Expire holds past expires_at (pg_cron)
+-- Webhook idempotency
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.webhook_events (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null,
+  event_id text not null,
+  payload jsonb not null default '{}'::jsonb,
+  processed_at timestamptz not null default now(),
+  unique (provider, event_id)
+);
+
+create index if not exists webhook_events_processed_at_idx
+  on public.webhook_events (processed_at desc);
+
+alter table public.webhook_events enable row level security;
+-- No policies → only service_role
+
+-- ---------------------------------------------------------------------------
+-- Expire holds: past expires_at, or unpaid pending older than 30 minutes
 -- ---------------------------------------------------------------------------
 
 create or replace function public.expire_holds()
@@ -310,14 +324,21 @@ begin
   perform set_config('app.bypass_listing_protect', 'on', true);
 
   for r in
-    select h.id, h.listing_id, h.booking_id
+    select h.id, h.listing_id, h.booking_id, h.status
     from public.holds h
-    where h.status in ('pending_payment', 'active')
-      and h.expires_at <= now()
+    where
+      (h.status = 'active' and h.expires_at <= now())
+      or (
+        h.status = 'pending_payment'
+        and (h.expires_at <= now() or h.created_at <= now() - interval '30 minutes')
+      )
     for update skip locked
   loop
     update public.holds
-    set status = 'expired'
+    set status = case
+      when r.status = 'pending_payment' then 'failed'
+      else 'expired'
+    end
     where id = r.id
       and status in ('pending_payment', 'active');
 
@@ -326,7 +347,6 @@ begin
     where id = r.booking_id
       and status in ('pending', 'confirmed');
 
-    -- Free listing only if no other active hold remains
     if not exists (
       select 1 from public.holds
       where listing_id = r.listing_id
@@ -337,6 +357,18 @@ begin
       set hold_status = 'none'
       where id = r.listing_id
         and hold_status = 'on_hold';
+    end if;
+
+    if to_regclass('public.app_events') is not null then
+      begin
+        perform public.log_app_event(
+          case when r.status = 'pending_payment' then 'hold_failed' else 'hold_expired' end,
+          'expire_holds',
+          jsonb_build_object('hold_id', r.id, 'listing_id', r.listing_id)
+        );
+      exception when others then
+        null;
+      end;
     end if;
 
     expired_count := expired_count + 1;
@@ -351,7 +383,6 @@ grant execute on function public.expire_holds() to service_role;
 
 create extension if not exists pg_cron with schema extensions;
 
--- Schedule every 5 minutes (ignore if already scheduled)
 do $$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
@@ -362,4 +393,22 @@ begin
 exception
   when others then
     raise notice 'pg_cron schedule skipped: %', sqlerrm;
+end $$;
+
+-- Allow hold_* event types on app_events when present
+do $$
+begin
+  if to_regclass('public.app_events') is not null then
+    alter table public.app_events drop constraint if exists app_events_event_type_check;
+    alter table public.app_events
+      add constraint app_events_event_type_check
+      check (event_type in (
+        'listing_approved', 'listing_rejected', 'booking_created', 'email_failed',
+        'rate_limit_hit', 'hold_created', 'hold_activated', 'hold_failed',
+        'hold_cancelled', 'hold_refunded', 'hold_expired',
+        'health_check_failed', 'account_deleted', 'listing_reported'
+      ));
+  end if;
+exception when others then
+  raise notice 'app_events event_type update skipped: %', sqlerrm;
 end $$;

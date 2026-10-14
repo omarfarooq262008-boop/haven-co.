@@ -117,6 +117,56 @@ export async function sendHoldConfirmationEmails(opts: {
   }
 }
 
+export async function sendHoldCancelledEmails(opts: {
+  booking: BookingEmailRow
+  listing: ListingEmailRow
+  ownerEmail: string
+  amount: number
+  currency: string
+  refunded: boolean
+}): Promise<void> {
+  try {
+    const fee = `${opts.amount} ${opts.currency}`
+    const refundNote = opts.refunded
+      ? `The hold fee (${escapeHtml(fee)}) is being refunded to the visitor.`
+      : `No payment was captured, so there is nothing to refund.`
+
+    if (opts.booking.visitor_email) {
+      const visitorHtml = shell({
+        heading: opts.refunded ? "Hold cancelled — refund started" : "Hold cancelled",
+        body: `
+          <p>Hi ${escapeHtml(opts.booking.visitor_name)}, the hold on
+            <strong>${escapeHtml(opts.listing.title)}</strong> was cancelled by the owner.</p>
+          <p>${refundNote}</p>
+        `,
+      })
+      await sendEmail({
+        to: opts.booking.visitor_email,
+        subject: `Hold cancelled: ${opts.listing.title}`,
+        html: visitorHtml,
+      })
+    }
+
+    if (opts.ownerEmail) {
+      const ownerHtml = shell({
+        heading: "Hold cancelled",
+        body: `
+          <p>You cancelled the hold on <strong>${escapeHtml(opts.listing.title)}</strong>.</p>
+          <p>${refundNote}</p>
+          <p>Visitor: ${escapeHtml(opts.booking.visitor_name)}</p>
+        `,
+      })
+      await sendEmail({
+        to: opts.ownerEmail,
+        subject: `Hold cancelled: ${opts.listing.title}`,
+        html: ownerHtml,
+      })
+    }
+  } catch (err) {
+    console.error("[holdEmails] cancel unexpected", err)
+  }
+}
+
 function shell(opts: { heading: string; body: string }) {
   return `<!doctype html>
 <html><body style="font-family:Georgia,serif;color:#1c1917;line-height:1.5;max-width:520px">

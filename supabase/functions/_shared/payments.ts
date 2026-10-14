@@ -17,11 +17,16 @@ export type CreateCheckoutInput = {
   holdId: string
   amount: number
   currency: string
-  description: string
-  customerEmail: string
-  successUrl: string
+  description?: string
+  /** Customer email (and optional name) — never card data */
+  customer: { email: string; name?: string }
+  /** Alias fields also accepted for older callers */
+  customerEmail?: string
+  returnUrl: string
   cancelUrl: string
-  failureUrl: string
+  /** Optional explicit failure URL; defaults to returnUrl with status=failed */
+  failureUrl?: string
+  successUrl?: string
 }
 
 export type CreateCheckoutResult = {
@@ -71,11 +76,38 @@ export function getPaymentProvider(): PaymentProvider {
     case "mock":
       return mockProvider
     case "safepay":
-      return safepayProvider
+      return safepayProviderStub
     case "payfast":
       return payfastProvider
     case "paymob":
       return paymobProvider
+  }
+}
+
+function normalizeCheckoutInput(input: CreateCheckoutInput): Required<
+  Pick<CreateCheckoutInput, "holdId" | "amount" | "currency" | "returnUrl" | "cancelUrl">
+> & {
+  customerEmail: string
+  customerName?: string
+  successUrl: string
+  failureUrl: string
+  description: string
+} {
+  const customerEmail = input.customer?.email?.trim() || input.customerEmail?.trim() || ""
+  if (!customerEmail) throw new Error("customer.email is required")
+  const successUrl = input.successUrl || input.returnUrl
+  const failureUrl = input.failureUrl || input.returnUrl
+  return {
+    holdId: input.holdId,
+    amount: input.amount,
+    currency: input.currency,
+    returnUrl: input.returnUrl,
+    cancelUrl: input.cancelUrl,
+    customerEmail,
+    customerName: input.customer?.name,
+    successUrl,
+    failureUrl,
+    description: input.description ?? "Property hold",
   }
 }
 
@@ -131,17 +163,18 @@ const mockProvider: PaymentProvider = {
   name: "mock",
 
   async createCheckout(input) {
+    const n = normalizeCheckoutInput(input)
     const providerReference = `mock_${crypto.randomUUID().replaceAll("-", "")}`
+    // Hosted mock checkout Edge Function (no card fields)
     const checkoutUrl =
-      `${functionsBaseUrl()}/payment-webhook` +
-      `?mock_checkout=1` +
-      `&ref=${encodeURIComponent(providerReference)}` +
-      `&hold=${encodeURIComponent(input.holdId)}` +
-      `&amount=${encodeURIComponent(String(input.amount))}` +
-      `&currency=${encodeURIComponent(input.currency)}` +
-      `&success=${encodeURIComponent(input.successUrl)}` +
-      `&cancel=${encodeURIComponent(input.cancelUrl)}` +
-      `&failure=${encodeURIComponent(input.failureUrl)}`
+      `${functionsBaseUrl()}/mock-checkout` +
+      `?ref=${encodeURIComponent(providerReference)}` +
+      `&hold=${encodeURIComponent(n.holdId)}` +
+      `&amount=${encodeURIComponent(String(n.amount))}` +
+      `&currency=${encodeURIComponent(n.currency)}` +
+      `&success=${encodeURIComponent(n.successUrl)}` +
+      `&cancel=${encodeURIComponent(n.cancelUrl)}` +
+      `&failure=${encodeURIComponent(n.failureUrl)}`
 
     return { checkoutUrl, providerReference, provider: "mock" }
   },
@@ -161,6 +194,7 @@ const mockProvider: PaymentProvider = {
 
     let parsed: {
       event?: string
+      event_id?: string
       provider_reference?: string
       hold_id?: string
     }
@@ -192,7 +226,6 @@ const mockProvider: PaymentProvider = {
   },
 
   async refund(input) {
-    // Mock always succeeds — no external call
     console.log("[payments:mock] refund", {
       providerReference: input.providerReference,
       amount: input.amount,
@@ -203,26 +236,19 @@ const mockProvider: PaymentProvider = {
   },
 }
 
-// ---------------------------------------------------------------------------
-// PLACEHOLDER: Safepay (Pakistan) — plug in hosted checkout later
-// Docs: https://safepay.pk (hosted / redirect checkout)
-// Secrets (when ready): SAFEPAY_API_KEY, SAFEPAY_WEBHOOK_SECRET, SAFEPAY_ENV
-// ---------------------------------------------------------------------------
-
-const safepayProvider: PaymentProvider = {
+// Safepay stub — full TODO skeleton lives in providers/safepay.ts
+const safepayProviderStub: PaymentProvider = {
   name: "safepay",
   async createCheckout(_input) {
     throw new Error(
-      "Safepay is not configured yet. Set PAYMENT_PROVIDER=mock for testing, or implement Safepay createCheckout in _shared/payments.ts.",
+      "Safepay is not configured yet. Set PAYMENT_PROVIDER=mock, or implement providers/safepay.ts from Safepay docs.",
     )
   },
   async verifyWebhook(_req, _rawBody) {
-    // TODO: verify Safepay signature header, parse payment token / tracker
-    return { ok: false, error: "Safepay webhook verification not implemented" }
+    return { ok: false, error: "Safepay webhook verification not implemented — see providers/safepay.ts" }
   },
   async refund(_input) {
-    // TODO: call Safepay refund API — never handle raw cards
-    return { ok: false, error: "Safepay refund not implemented" }
+    return { ok: false, error: "Safepay refund not implemented — see providers/safepay.ts" }
   },
 }
 
@@ -320,7 +346,7 @@ export function mockCheckoutHtml(opts: {
       <input type="hidden" name="cancel" value="${esc(opts.cancelUrl)}" />
       <input type="hidden" name="failure" value="${esc(opts.failureUrl)}" />
       <button class="ok" type="submit" name="action" value="succeed">Pay successfully</button>
-      <button class="fail" type="submit" name="action" value="fail">Simulate failure</button>
+      <button class="fail" type="submit" name="action" value="fail">Payment fails</button>
       <button class="cancel" type="submit" name="action" value="cancel">Cancel</button>
     </form>
     <p class="note">This page is the mock provider’s hosted checkout. Card data is never collected here.</p>

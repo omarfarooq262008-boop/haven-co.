@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
+import { logAppEvent } from "../_shared/appEvents.ts"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
 import { appUrl, getPaymentProvider } from "../_shared/payments.ts"
 
@@ -124,6 +125,8 @@ Deno.serve(async (req) => {
       Math.min(Date.now() + HOLD_HOURS * 60 * 60 * 1000, meetingAt.getTime()),
     )
 
+    // Booking + hold: service role inserts pending booking, then hold.
+    // Unique indexes enforce one open hold per listing and one booking per slot.
     const { data: booking, error: bookingError } = await admin
       .from("bookings")
       .insert({
@@ -173,9 +176,9 @@ Deno.serve(async (req) => {
     }
 
     const base = appUrl()
-    const successUrl = `${base}/payment/result?status=success&hold=${hold.id}`
-    const cancelUrl = `${base}/payment/result?status=cancelled&hold=${hold.id}`
-    const failureUrl = `${base}/payment/result?status=failed&hold=${hold.id}`
+    const returnUrl = `${base}/payment/success?hold=${hold.id}`
+    const cancelUrl = `${base}/payment/cancelled?hold=${hold.id}`
+    const failureUrl = `${base}/payment/failed?hold=${hold.id}`
 
     let checkout
     try {
@@ -184,9 +187,10 @@ Deno.serve(async (req) => {
         amount,
         currency,
         description: `Hold: ${listing.title}`,
-        customerEmail: email,
-        successUrl,
+        customer: { email, name },
+        returnUrl,
         cancelUrl,
+        successUrl: returnUrl,
         failureUrl,
       })
     } catch (err) {
@@ -203,12 +207,21 @@ Deno.serve(async (req) => {
       .update({
         provider: checkout.provider,
         provider_reference: checkout.providerReference,
+        checkout_url: checkout.checkoutUrl,
       })
       .eq("id", hold.id)
 
     if (refError) {
       console.error("[create-hold-checkout] provider_reference", refError.message)
     }
+
+    await logAppEvent("hold_created", "create-hold-checkout", {
+      hold_id: hold.id,
+      listing_id: listing.id,
+      booking_id: booking.id,
+      amount,
+      currency,
+    })
 
     return json({
       ok: true,

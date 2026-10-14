@@ -18,6 +18,10 @@ verify_jwt = true
 [functions.payment-webhook]
 verify_jwt = false
 
+# Mock hosted checkout (Pay / Fail / Cancel). Public page; signature set server-side.
+[functions.mock-checkout]
+verify_jwt = false
+
 [functions.cancel-hold]
 verify_jwt = true
 

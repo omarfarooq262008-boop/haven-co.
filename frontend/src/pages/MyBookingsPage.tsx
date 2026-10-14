@@ -6,6 +6,7 @@ import { formatMeetingAt } from '../lib/booking'
 import {
   cancelHold,
   formatHoldFee,
+  holdExpiryCountdown,
   holdStatusLabel,
   type HoldStatus,
 } from '../lib/holds'
@@ -41,6 +42,12 @@ export function MyBookingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showBookedNotice, setShowBookedNotice] = useState(justBooked)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   useEffect(() => {
     if (justBooked) setShowBookedNotice(true)
@@ -271,8 +278,11 @@ export function MyBookingsPage() {
                   {hold ? (
                     <p className="text-sm text-ink-soft">
                       Hold expires {formatMeetingAt(hold.expires_at)}
+                      {hold.status === 'active' || hold.status === 'pending_payment'
+                        ? ` · ${holdExpiryCountdown(hold.expires_at, nowMs)}`
+                        : null}
                       {hold.status === 'active'
-                        ? ' · Refundable if you (owner) cancel; not if the visitor no-shows'
+                        ? ' · Refundable if the owner cancels; not if the visitor no-shows'
                         : null}
                     </p>
                   ) : null}

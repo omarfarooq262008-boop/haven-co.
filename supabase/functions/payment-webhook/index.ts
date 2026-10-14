@@ -2,11 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { logAppEvent } from "../_shared/appEvents.ts"
 import { sendHoldConfirmationEmails } from "../_shared/holdEmails.ts"
-import {
-  getPaymentProvider,
-  mockCheckoutHtml,
-  signMockWebhookBody,
-} from "../_shared/payments.ts"
+import { getPaymentProvider } from "../_shared/payments.ts"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
 
 const corsHeaders = {
@@ -20,16 +16,8 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders })
   }
 
-  const url = new URL(req.url)
-
-  // Mock hosted checkout page (no card fields)
-  if (req.method === "GET" && url.searchParams.get("mock_checkout") === "1") {
-    return serveMockCheckout(url)
-  }
-
-  // Mock checkout form POST → signed internal webhook fulfillment
-  if (req.method === "POST" && url.searchParams.get("mock_checkout") === "1") {
-    return handleMockCheckoutPost(req)
+  if (req.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405)
   }
 
   try {
@@ -57,6 +45,13 @@ Deno.serve(async (req) => {
       return json({ error: verified.error }, 401)
     }
 
+    // Idempotency via webhook_events (provider + event_id unique)
+    const eventId = extractEventId(verified.raw, verified.providerReference, verified.event)
+    const inserted = await recordWebhookEvent(admin, provider.name, eventId, verified.raw ?? {})
+    if (!inserted) {
+      return json({ ok: true, skipped: "duplicate_event", eventId })
+    }
+
     const result = await fulfillWebhookEvent(admin, verified)
     return json(result, result.ok ? 200 : 400)
   } catch (err) {
@@ -65,102 +60,36 @@ Deno.serve(async (req) => {
   }
 })
 
-function serveMockCheckout(url: URL) {
-  if (getPaymentProvider().name !== "mock") {
-    return new Response("Mock checkout is disabled", { status: 404 })
+function extractEventId(
+  raw: unknown,
+  providerReference: string,
+  event: string,
+): string {
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>
+    const id = obj.event_id ?? obj.id ?? obj.eventId
+    if (typeof id === "string" && id.trim()) return id.trim()
   }
-  const ref = url.searchParams.get("ref") ?? ""
-  const hold = url.searchParams.get("hold") ?? ""
-  if (!ref || !hold) {
-    return new Response("Missing checkout parameters", { status: 400 })
-  }
-  const html = mockCheckoutHtml({
-    ref,
-    holdId: hold,
-    amount: url.searchParams.get("amount") ?? "",
-    currency: url.searchParams.get("currency") ?? "PKR",
-    successUrl: url.searchParams.get("success") ?? "/",
-    cancelUrl: url.searchParams.get("cancel") ?? "/",
-    failureUrl: url.searchParams.get("failure") ?? "/",
-    postUrl: `${url.origin}${url.pathname}?mock_checkout=1`,
-  })
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  })
+  return `${providerReference}:${event}`
 }
 
-async function handleMockCheckoutPost(req: Request) {
-  if (getPaymentProvider().name !== "mock") {
-    return new Response("Mock checkout is disabled", { status: 404 })
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-  if (!supabaseUrl || !serviceRoleKey) {
-    return new Response("Not configured", { status: 500 })
-  }
-
-  const form = await req.formData()
-  const action = String(form.get("action") ?? "")
-  const ref = String(form.get("ref") ?? "")
-  const holdId = String(form.get("hold") ?? "")
-  const successUrl = String(form.get("success") ?? "/")
-  const cancelUrl = String(form.get("cancel") ?? "/")
-  const failureUrl = String(form.get("failure") ?? "/")
-
-  const event =
-    action === "succeed"
-      ? "payment.succeeded"
-      : action === "fail"
-        ? "payment.failed"
-        : "payment.cancelled"
-
-  const redirectTo =
-    event === "payment.succeeded"
-      ? successUrl
-      : event === "payment.failed"
-        ? failureUrl
-        : cancelUrl
-
-  const body = JSON.stringify({
-    event,
-    provider_reference: ref,
-    hold_id: holdId,
+/** Returns false if this event was already processed (unique violation). */
+async function recordWebhookEvent(
+  admin: ReturnType<typeof createClient>,
+  provider: string,
+  eventId: string,
+  payload: unknown,
+): Promise<boolean> {
+  const { error } = await admin.from("webhook_events").insert({
+    provider,
+    event_id: eventId,
+    payload: payload && typeof payload === "object" ? payload : { raw: payload },
   })
-  const signature = await signMockWebhookBody(body)
-
-  const admin = createClient(supabaseUrl, serviceRoleKey)
-  const limited = await enforceEdgeRateLimits({
-    admin,
-    req,
-    scope: "payment-webhook",
-    ipMax: 120,
-    ipWindowSeconds: 60,
-  })
-  if (!limited.ok) {
-    return new Response(limited.message, { status: 429 })
-  }
-
-  // Fulfill server-side with the same verifyWebhook path (signature trusted here)
-  const verified = await getPaymentProvider().verifyWebhook(
-    new Request(req.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-payment-signature": signature,
-      },
-      body,
-    }),
-    body,
-  )
-
-  if (!verified.ok) {
-    console.error("[payment-webhook] mock verify", verified.error)
-    return Response.redirect(failureUrl, 303)
-  }
-
-  await fulfillWebhookEvent(admin, verified)
-  return Response.redirect(redirectTo, 303)
+  if (!error) return true
+  if (error.code === "23505") return false
+  // Table missing in older envs — fall through and rely on hold status checks
+  console.error("[payment-webhook] webhook_events", error.message)
+  return true
 }
 
 async function fulfillWebhookEvent(
@@ -185,7 +114,6 @@ async function fulfillWebhookEvent(
     return { ok: false, error: "Hold id mismatch" }
   }
 
-  // Idempotent: already active / terminal
   if (verified.event === "payment.succeeded") {
     if (hold.status === "active") {
       return { ok: true, skipped: "already_active", holdId: hold.id }
@@ -194,9 +122,10 @@ async function fulfillWebhookEvent(
       return { ok: true, skipped: `hold_status_${hold.status}`, holdId: hold.id }
     }
 
+    const paidAt = new Date().toISOString()
     const { data: activated, error: activateError } = await admin
       .from("holds")
-      .update({ status: "active" })
+      .update({ status: "active", paid_at: paidAt })
       .eq("id", hold.id)
       .eq("status", "pending_payment")
       .select("id")
@@ -261,11 +190,12 @@ async function fulfillWebhookEvent(
     return { ok: true, holdId: hold.id, status: "active" }
   }
 
-  // failed / cancelled while still pending — free the slot, do not mark listing on hold
+  // failed / cancelled while still pending — free the slot
   if (hold.status === "pending_payment") {
+    const nextStatus = verified.event === "payment.failed" ? "failed" : "cancelled"
     await admin
       .from("holds")
-      .update({ status: "cancelled" })
+      .update({ status: nextStatus })
       .eq("id", hold.id)
       .eq("status", "pending_payment")
 
@@ -274,6 +204,13 @@ async function fulfillWebhookEvent(
       .update({ status: "cancelled" })
       .eq("id", hold.booking_id)
       .eq("status", "pending")
+
+    await logAppEvent("hold_failed", "payment-webhook", {
+      hold_id: hold.id,
+      listing_id: hold.listing_id,
+      event: verified.event,
+      outcome: nextStatus,
+    })
   }
 
   return {

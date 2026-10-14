@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { logAppEvent } from "../_shared/appEvents.ts"
+import { sendHoldCancelledEmails } from "../_shared/holdEmails.ts"
 import { getPaymentProvider } from "../_shared/payments.ts"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
 
@@ -52,24 +53,42 @@ Deno.serve(async (req) => {
 
     const { data: hold, error: holdError } = await admin
       .from("holds")
-      .select("*, listings!inner(id, owner_id, hold_status)")
+      .select("*, listings!inner(id, owner_id, hold_status, title, address, city)")
       .eq("id", body.holdId)
       .single()
 
     if (holdError || !hold) return json({ error: "Hold not found" }, 404)
 
-    const listing = hold.listings as { id: string; owner_id: string; hold_status: string }
+    const listing = hold.listings as {
+      id: string
+      owner_id: string
+      hold_status: string
+      title: string
+      address: string | null
+      city: string
+    }
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle()
+    const isAdmin = Boolean(profile?.is_admin)
     const isOwner = listing.owner_id === user.id
-    if (!isOwner) {
-      return json({ error: "Only the listing owner can cancel a hold and issue a refund" }, 403)
+
+    if (!isOwner && !isAdmin) {
+      return json({ error: "Only the listing owner or an admin can cancel a hold" }, 403)
     }
 
     if (hold.status !== "active" && hold.status !== "pending_payment") {
       return json({ ok: true, skipped: `hold_already_${hold.status}` })
     }
 
+    const wasActive = hold.status === "active"
+    let outcome: "refunded" | "cancelled" = "cancelled"
+
     // Refund only when payment was captured (active). Pending unpaid holds just cancel.
-    if (hold.status === "active") {
+    if (wasActive) {
       if (!hold.provider_reference) {
         return json({ error: "Missing provider reference for refund" }, 500)
       }
@@ -84,9 +103,10 @@ Deno.serve(async (req) => {
         return json({ error: refund.error ?? "Refund failed" }, 502)
       }
 
+      const refundedAt = new Date().toISOString()
       const { data: refunded, error: refundUpdateError } = await admin
         .from("holds")
-        .update({ status: "refunded" })
+        .update({ status: "refunded", refunded_at: refundedAt })
         .eq("id", hold.id)
         .eq("status", "active")
         .select("id")
@@ -99,6 +119,7 @@ Deno.serve(async (req) => {
       if (!refunded) {
         return json({ ok: true, skipped: "already_refunded" })
       }
+      outcome = "refunded"
     } else {
       await admin
         .from("holds")
@@ -119,16 +140,36 @@ Deno.serve(async (req) => {
       .eq("id", hold.listing_id)
       .eq("hold_status", "on_hold")
 
-    await logAppEvent("hold_cancelled", "cancel-hold", {
+    await logAppEvent(outcome === "refunded" ? "hold_refunded" : "hold_cancelled", "cancel-hold", {
       hold_id: hold.id,
       listing_id: hold.listing_id,
-      outcome: hold.status === "active" ? "refunded" : "cancelled",
+      outcome,
+      by_admin: isAdmin && !isOwner,
     })
+
+    const { data: booking } = await admin
+      .from("bookings")
+      .select("*")
+      .eq("id", hold.booking_id)
+      .single()
+
+    if (booking) {
+      const { data: ownerData } = await admin.auth.admin.getUserById(listing.owner_id)
+      const ownerEmail = ownerData.user?.email
+      await sendHoldCancelledEmails({
+        booking,
+        listing,
+        ownerEmail: ownerEmail ?? "",
+        amount: hold.amount,
+        currency: hold.currency,
+        refunded: outcome === "refunded",
+      })
+    }
 
     return json({
       ok: true,
       holdId: hold.id,
-      status: hold.status === "active" ? "refunded" : "cancelled",
+      status: outcome,
     })
   } catch (err) {
     console.error("[cancel-hold]", err)
