@@ -80,6 +80,7 @@ Disallow: /my-bookings
 Disallow: /login
 Disallow: /signup
 Disallow: /payment/
+Disallow: /mock-checkout
 
 Sitemap: ${site}/sitemap.xml
 `

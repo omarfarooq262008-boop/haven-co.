@@ -1,125 +1,167 @@
 /**
- * Mock hosted checkout page — Pay successfully / Payment fails / Cancel.
- * Posts a signed payload to payment-webhook (same path a real provider would hit).
- * No card fields. Only active when PAYMENT_PROVIDER=mock (default).
+ * Mock checkout JSON API — used only when PAYMENT_PROVIDER=mock.
+ * Frontend /mock-checkout POSTs { ref, hold, action }; this function signs a
+ * webhook payload with PAYMENT_WEBHOOK_SECRET (never sent to the browser) and
+ * runs the same fulfillment path as payment-webhook.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import {
   getPaymentProviderName,
-  mockCheckoutHtml,
   signMockWebhookBody,
-  getPaymentProvider,
 } from "../_shared/payments.ts"
+import { handleSignedPaymentWebhookBody } from "../_shared/processPaymentWebhook.ts"
 import { enforceEdgeRateLimits } from "../_shared/rateLimit.ts"
 
-Deno.serve(async (req) => {
-  const url = new URL(req.url)
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+}
 
-  if (getPaymentProviderName() !== "mock") {
-    return new Response("Mock checkout is disabled (PAYMENT_PROVIDER is not mock)", { status: 404 })
+type Action = "succeed" | "fail" | "cancel"
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
   }
 
-  if (req.method === "GET") {
-    const ref = url.searchParams.get("ref") ?? ""
-    const hold = url.searchParams.get("hold") ?? ""
-    if (!ref || !hold) return new Response("Missing checkout parameters", { status: 400 })
-
-    const html = mockCheckoutHtml({
-      ref,
-      holdId: hold,
-      amount: url.searchParams.get("amount") ?? "",
-      currency: url.searchParams.get("currency") ?? "PKR",
-      successUrl: url.searchParams.get("success") ?? "/",
-      cancelUrl: url.searchParams.get("cancel") ?? "/",
-      failureUrl: url.searchParams.get("failure") ?? "/",
-      postUrl: `${url.origin}${url.pathname}`,
-    })
-    return new Response(html, {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    })
+  if (getPaymentProviderName() !== "mock") {
+    return json({ error: "Mock checkout is disabled (PAYMENT_PROVIDER is not mock)" }, 404)
   }
 
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 })
+    return json({ error: "Method not allowed. Use POST with JSON { ref, hold, action }." }, 405)
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-  if (!supabaseUrl || !serviceRoleKey) {
-    return new Response("Not configured", { status: 500 })
-  }
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json({ error: "Service is not configured" }, 500)
+    }
 
-  const form = await req.formData()
-  const action = String(form.get("action") ?? "")
-  const ref = String(form.get("ref") ?? "")
-  const holdId = String(form.get("hold") ?? "")
-  const successUrl = String(form.get("success") ?? "/")
-  const cancelUrl = String(form.get("cancel") ?? "/")
-  const failureUrl = String(form.get("failure") ?? "/")
+    const admin = createClient(supabaseUrl, serviceRoleKey)
+    const limited = await enforceEdgeRateLimits({
+      admin,
+      req,
+      scope: "mock-checkout",
+      ipMax: 60,
+      ipWindowSeconds: 60,
+    })
+    if (!limited.ok) return json({ error: limited.message }, limited.status)
 
-  const event =
-    action === "succeed"
-      ? "payment.succeeded"
-      : action === "fail"
-        ? "payment.failed"
-        : "payment.cancelled"
+    const body = (await req.json().catch(() => null)) as {
+      ref?: string
+      hold?: string
+      action?: string
+    } | null
 
-  const redirectTo =
-    event === "payment.succeeded"
-      ? successUrl
-      : event === "payment.failed"
-        ? failureUrl
-        : cancelUrl
+    if (!body || typeof body !== "object") {
+      return json({ error: "Invalid JSON body. Expected { ref, hold, action }." }, 400)
+    }
 
-  const body = JSON.stringify({
-    event,
-    event_id: `mock_${ref}_${event}`,
-    provider_reference: ref,
-    hold_id: holdId,
-  })
-  const signature = await signMockWebhookBody(body)
+    const ref = String(body.ref ?? "").trim()
+    const holdId = String(body.hold ?? "").trim()
+    const actionRaw = String(body.action ?? "").trim().toLowerCase()
+    const action: Action | null =
+      actionRaw === "succeed" || actionRaw === "fail" || actionRaw === "cancel"
+        ? actionRaw
+        : null
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
-  const limited = await enforceEdgeRateLimits({
-    admin,
-    req,
-    scope: "mock-checkout",
-    ipMax: 60,
-    ipWindowSeconds: 60,
-  })
-  if (!limited.ok) return new Response(limited.message, { status: 429 })
+    if (!ref || !holdId || !action) {
+      return json({
+        error: "ref, hold, and action (succeed|fail|cancel) are required",
+      }, 400)
+    }
 
-  // Call payment-webhook internally so fulfillment uses the same verified path
-  const webhookUrl = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/payment-webhook`
-  const webhookRes = await fetch(webhookUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-payment-signature": signature,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      apikey: serviceRoleKey,
-    },
-    body,
-  })
+    const { data: hold, error: holdError } = await admin
+      .from("holds")
+      .select("id, status, provider_reference")
+      .eq("id", holdId)
+      .maybeSingle()
 
-  if (!webhookRes.ok) {
-    console.error("[mock-checkout] webhook failed", await webhookRes.text())
-    // Still redirect — success page will poll hold status
-  }
+    if (holdError) {
+      console.error("[mock-checkout] hold lookup", holdError.message)
+      return json({ error: "Could not load hold" }, 500)
+    }
+    if (!hold) {
+      return json({ error: "Hold not found" }, 404)
+    }
+    if (hold.status !== "pending_payment") {
+      // Idempotent: already processed (e.g. double-click)
+      if (hold.status === "active" || hold.status === "failed" || hold.status === "cancelled") {
+        return json({
+          ok: true,
+          skipped: `hold_already_${hold.status}`,
+          holdId: hold.id,
+          outcome: hold.status === "active" ? "success" : hold.status === "failed" ? "failed" : "cancelled",
+        })
+      }
+      return json({ error: `Hold is not awaiting payment (status: ${hold.status})` }, 409)
+    }
+    if (!hold.provider_reference || hold.provider_reference !== ref) {
+      return json({ error: "Wrong or mismatched payment reference" }, 403)
+    }
 
-  // Also verify locally for logging
-  const verified = await getPaymentProvider().verifyWebhook(
-    new Request(webhookUrl, {
+    const event =
+      action === "succeed"
+        ? "payment.succeeded"
+        : action === "fail"
+          ? "payment.failed"
+          : "payment.cancelled"
+
+    const payload = JSON.stringify({
+      event,
+      event_id: `mock_${ref}_${event}`,
+      provider_reference: ref,
+      hold_id: holdId,
+    })
+    const signature = await signMockWebhookBody(payload)
+
+    const signedReq = new Request(req.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-payment-signature": signature },
-      body,
-    }),
-    body,
-  )
-  if (!verified.ok) {
-    console.error("[mock-checkout] local verify", verified.error)
-  }
+      headers: {
+        "Content-Type": "application/json",
+        "x-payment-signature": signature,
+      },
+      body: payload,
+    })
 
-  return Response.redirect(redirectTo, 303)
+    const result = await handleSignedPaymentWebhookBody(
+      admin,
+      signedReq,
+      payload,
+      "mock-checkout",
+    )
+
+    const outcome =
+      action === "succeed" ? "success" : action === "fail" ? "failed" : "cancelled"
+
+    if (result.status >= 400 && !result.body.skipped) {
+      return json(
+        {
+          error: (result.body.error as string) ?? "Could not process mock payment",
+          ...result.body,
+        },
+        result.status,
+      )
+    }
+
+    return json({
+      ok: true,
+      outcome,
+      holdId,
+      ...result.body,
+    })
+  } catch (err) {
+    console.error("[mock-checkout]", err)
+    return json({ error: err instanceof Error ? err.message : "Unexpected error" }, 500)
+  }
 })
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  })
+}

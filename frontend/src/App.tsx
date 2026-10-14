@@ -46,6 +46,9 @@ const PaymentFailedPage = lazy(() =>
 const PaymentCancelledPage = lazy(() =>
   import('./pages/PaymentResultPage').then((m) => ({ default: m.PaymentCancelledPage })),
 )
+const MockCheckoutPage = lazy(() =>
+  import('./pages/MockCheckoutPage').then((m) => ({ default: m.MockCheckoutPage })),
+)
 const StatusPage = lazy(() =>
   import('./pages/StatusPage').then((m) => ({ default: m.StatusPage })),
 )
@@ -96,6 +99,7 @@ export default function App() {
                 <Route path="listing/:id/book" element={<BookMeetingPage />} />
                 <Route path="my-listings" element={<MyListingsPage />} />
                 <Route path="my-bookings" element={<MyBookingsPage />} />
+                <Route path="mock-checkout" element={<MockCheckoutPage />} />
                 <Route path="payment/success" element={<PaymentSuccessPage />} />
                 <Route path="payment/failed" element={<PaymentFailedPage />} />
                 <Route path="payment/cancelled" element={<PaymentCancelledPage />} />

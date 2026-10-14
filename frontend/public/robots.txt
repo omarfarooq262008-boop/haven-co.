@@ -9,5 +9,6 @@ Disallow: /my-bookings
 Disallow: /login
 Disallow: /signup
 Disallow: /payment/
+Disallow: /mock-checkout
 
 Sitemap: https://havenandco.example/sitemap.xml

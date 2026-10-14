@@ -18,7 +18,7 @@ verify_jwt = true
 [functions.payment-webhook]
 verify_jwt = false
 
-# Mock hosted checkout (Pay / Fail / Cancel). Public page; signature set server-side.
+# Mock checkout JSON API (frontend posts { ref, hold, action }). No JWT; rate-limited + mock-only.
 [functions.mock-checkout]
 verify_jwt = false
 

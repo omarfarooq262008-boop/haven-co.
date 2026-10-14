@@ -111,14 +111,23 @@ function normalizeCheckoutInput(input: CreateCheckoutInput): Required<
   }
 }
 
-function appUrl(): string {
-  return (Deno.env.get("APP_URL") ?? "http://localhost:5173").replace(/\/$/, "")
-}
-
-function functionsBaseUrl(): string {
-  const url = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "")
-  if (!url) throw new Error("SUPABASE_URL is not set")
-  return `${url}/functions/v1`
+/**
+ * Public app origin for checkout redirects.
+ * Forces https except for localhost / 127.0.0.1 (local Vite).
+ */
+export function appUrl(): string {
+  let raw = (Deno.env.get("APP_URL") ?? "http://localhost:5173").trim().replace(/\/$/, "")
+  if (!/^https?:\/\//i.test(raw)) {
+    raw = `https://${raw}`
+  }
+  try {
+    const u = new URL(raw)
+    const local = u.hostname === "localhost" || u.hostname === "127.0.0.1"
+    if (!local) u.protocol = "https:"
+    return u.origin
+  } catch {
+    return "http://localhost:5173"
+  }
 }
 
 function webhookSecret(): string {
@@ -156,7 +165,7 @@ export async function signMockWebhookBody(body: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Mock provider — hosted checkout page (Edge Function), no card fields
+// Mock provider — frontend /mock-checkout page (no card fields)
 // ---------------------------------------------------------------------------
 
 const mockProvider: PaymentProvider = {
@@ -165,11 +174,12 @@ const mockProvider: PaymentProvider = {
   async createCheckout(input) {
     const n = normalizeCheckoutInput(input)
     const providerReference = `mock_${crypto.randomUUID().replaceAll("-", "")}`
-    // Hosted mock checkout Edge Function (no card fields)
+    const origin = appUrl()
+    // Frontend route — Edge Function is JSON-only and signs webhooks server-side
     const checkoutUrl =
-      `${functionsBaseUrl()}/mock-checkout` +
-      `?ref=${encodeURIComponent(providerReference)}` +
-      `&hold=${encodeURIComponent(n.holdId)}` +
+      `${origin}/mock-checkout` +
+      `?hold=${encodeURIComponent(n.holdId)}` +
+      `&ref=${encodeURIComponent(providerReference)}` +
       `&amount=${encodeURIComponent(String(n.amount))}` +
       `&currency=${encodeURIComponent(n.currency)}` +
       `&success=${encodeURIComponent(n.successUrl)}` +
@@ -297,62 +307,3 @@ const paymobProvider: PaymentProvider = {
   },
 }
 
-/** Build mock hosted checkout HTML (no card fields — only succeed/fail/cancel). */
-export function mockCheckoutHtml(opts: {
-  ref: string
-  holdId: string
-  amount: string
-  currency: string
-  successUrl: string
-  cancelUrl: string
-  failureUrl: string
-  postUrl: string
-}): string {
-  const esc = (v: string) =>
-    v
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mock checkout — Haven &amp; Co</title>
-  <style>
-    body { font-family: Georgia, serif; background: #f5f0e8; color: #1c1917; margin: 0; padding: 24px; }
-    .card { max-width: 420px; margin: 40px auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 8px 30px rgba(0,0,0,.06); }
-    h1 { font-size: 22px; margin: 0 0 8px; }
-    p { line-height: 1.5; color: #57534e; }
-    .amt { font-size: 28px; font-weight: 700; color: #1c1917; margin: 16px 0; }
-    button { display: block; width: 100%; margin: 8px 0; padding: 12px 16px; border-radius: 10px; border: none; font: inherit; font-weight: 600; cursor: pointer; }
-    .ok { background: #1c1917; color: #f5f0e8; }
-    .fail { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .cancel { background: #fff; color: #57534e; border: 1px solid #e7e5e4; }
-    .note { font-size: 12px; color: #a8a29e; margin-top: 16px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Mock payment</h1>
-    <p>Test checkout for Haven &amp; Co holds. No real cards — choose an outcome.</p>
-    <p class="amt">${esc(opts.amount)} ${esc(opts.currency)}</p>
-    <form method="POST" action="${esc(opts.postUrl)}">
-      <input type="hidden" name="ref" value="${esc(opts.ref)}" />
-      <input type="hidden" name="hold" value="${esc(opts.holdId)}" />
-      <input type="hidden" name="success" value="${esc(opts.successUrl)}" />
-      <input type="hidden" name="cancel" value="${esc(opts.cancelUrl)}" />
-      <input type="hidden" name="failure" value="${esc(opts.failureUrl)}" />
-      <button class="ok" type="submit" name="action" value="succeed">Pay successfully</button>
-      <button class="fail" type="submit" name="action" value="fail">Payment fails</button>
-      <button class="cancel" type="submit" name="action" value="cancel">Cancel</button>
-    </form>
-    <p class="note">This page is the mock provider’s hosted checkout. Card data is never collected here.</p>
-  </div>
-</body>
-</html>`
-}
-
-export { appUrl }
