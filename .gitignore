@@ -36,3 +36,6 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI local cache
+supabase/.temp/
