@@ -1,0 +1,47 @@
+name: Keepalive
+
+# Lightweight daily ping so the linked Supabase project stays active.
+# Secrets: SUPABASE_URL, SUPABASE_ANON_KEY (publishable / anon key).
+
+on:
+  schedule:
+    # Once a day at 08:00 UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    name: Ping Supabase REST
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: POST /rest/v1/rpc/get_public_settings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "Missing SUPABASE_URL or SUPABASE_ANON_KEY secret"
+            exit 1
+          fi
+          BASE="${SUPABASE_URL%/}"
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Content-Type: application/json" \
+            "${BASE}/rest/v1/rpc/get_public_settings")"
+          echo "HTTP status: ${CODE}"
+          if [ "${CODE}" != "200" ]; then
+            echo "Keepalive failed: expected HTTP 200"
+            exit 1
+          fi
