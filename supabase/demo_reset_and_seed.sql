@@ -22,11 +22,8 @@
 --   demo.owner2@example.com  → Bilal Ahmed   0300-2222202
 --   demo.buyer@example.com   → Sara Malik    0300-3333303
 --
--- IMAGES: frontend/public/demo/listing-XX.webp  (served by the SPA).
---   Set v_site_origin below to your live frontend (no trailing slash), e.g.
---   https://your-app.vercel.app — also set VITE_SITE_URL to the same value.
---   Relative /demo/... paths work too if you leave the default and open the site
---   on that same origin.
+-- IMAGES: frontend/public/demo/listing-01.webp … listing-42.webp (SPA static).
+--   v_site_origin is set to the live Vercel URL below. Match VITE_SITE_URL.
 --
 -- STORAGE: Do NOT empty listing-images here. In Dashboard → Storage →
 --   listing-images → select all → Delete (or empty bucket). Seed uses /demo/ URLs.
@@ -68,18 +65,33 @@ end $$;
 
 -- ---------------------------------------------------------------------------
 -- 1) Disable side-effect / seed-blocking triggers (re-enabled at end)
+--    Only if the trigger exists (names from schema.sql / migration_rate_limits /
+--    migration_bookings / migration_holds).
 -- ---------------------------------------------------------------------------
-alter table public.listings disable trigger enforce_listing_rate_limit_trg;
-alter table public.messages disable trigger enforce_message_rate_limit_trg;
-alter table public.bookings disable trigger enforce_booking_rate_limit_trg;
--- Needed so we can insert a past meeting_at for the demo "past" booking
-alter table public.bookings disable trigger validate_booking_row_trg;
-
--- Optional: disable any non-internal trigger whose function name looks like a webhook
 do $$
 declare
   r record;
 begin
+  for r in
+    select c.relname, t.tgname
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and not t.tgisinternal
+      and (
+        (c.relname = 'listings' and t.tgname = 'enforce_listing_rate_limit_trg')
+        or (c.relname = 'messages' and t.tgname = 'enforce_message_rate_limit_trg')
+        or (c.relname = 'bookings' and t.tgname in (
+          'enforce_booking_rate_limit_trg', 'validate_booking_row_trg'
+        ))
+      )
+  loop
+    execute format('alter table public.%I disable trigger %I', r.relname, r.tgname);
+    raise notice 'Disabled %.%', r.relname, r.tgname;
+  end loop;
+
+  -- Optional: webhook-like triggers (Dashboard DB webhooks may use these)
   for r in
     select c.relname, t.tgname, p.proname
     from pg_trigger t
@@ -106,8 +118,7 @@ end $$;
 -- =============================================================================
 do $$
 declare
-  -- >>> EDIT THIS to your live frontend origin (VITE_SITE_URL), no trailing slash <<<
-  v_site_origin text := 'https://havenandco.example';
+  v_site_origin text := 'https://haven-co-zeta.vercel.app';
 
   v_owner1_fixed uuid := 'b1000001-0000-4000-8000-000000000001';
   v_owner2_fixed uuid := 'b1000001-0000-4000-8000-000000000002';
@@ -187,31 +198,31 @@ begin
   raise notice 'Hold fee PKR: %', v_fee;
 
   -- -------------------------------------------------------------------------
-  -- 2) RESET
+  -- 2) RESET (optional tables only via to_regclass + EXECUTE)
   -- -------------------------------------------------------------------------
   delete from public.messages;
-  delete from public.conversations;
   if to_regclass('public.message_email_cooldowns') is not null then
-    delete from public.message_email_cooldowns;
+    execute 'delete from public.message_email_cooldowns';
   end if;
+  delete from public.conversations;
   if to_regclass('public.holds') is not null then
-    delete from public.holds;
+    execute 'delete from public.holds';
   end if;
   delete from public.bookings;
   if to_regclass('public.listing_reports') is not null then
-    delete from public.listing_reports;
+    execute 'delete from public.listing_reports';
   end if;
   if to_regclass('public.webhook_events') is not null then
-    delete from public.webhook_events;
+    execute 'delete from public.webhook_events';
   end if;
   if to_regclass('public.app_events') is not null then
-    delete from public.app_events;
+    execute 'delete from public.app_events';
   end if;
   if to_regclass('public.email_outbox') is not null then
     execute 'delete from public.email_outbox';
   end if;
   if to_regclass('public.edge_rate_buckets') is not null then
-    delete from public.edge_rate_buckets;
+    execute 'delete from public.edge_rate_buckets';
   end if;
   delete from public.listings;
 
@@ -575,41 +586,54 @@ begin
   );
 
   -- -------------------------------------------------------------------------
-  -- 7) Active hold (if holds table exists)
+  -- 7) Active hold (optional table — EXECUTE only)
   -- -------------------------------------------------------------------------
   if to_regclass('public.holds') is not null then
-    insert into public.holds (
-      id, listing_id, booking_id, visitor_id, amount, currency, status,
-      provider, provider_reference, expires_at, paid_at, created_at
-    ) values (
-      H01, L11, B04, v_buyer, v_fee, 'PKR', 'active',
-      'mock', 'mock_demo_hold_ref_001',
-      least(now() + interval '48 hours', date_trunc('day', now() + interval '2 days') + interval '10 hours'),
-      now() - interval '20 hours',
-      now() - interval '1 day'
+    execute format(
+      $sql$
+        insert into public.holds (
+          id, listing_id, booking_id, visitor_id, amount, currency, status,
+          provider, provider_reference, expires_at, paid_at, created_at
+        ) values (
+          %L::uuid, %L::uuid, %L::uuid, %L::uuid, %s, 'PKR', 'active',
+          'mock', 'mock_demo_hold_ref_001',
+          least(now() + interval '48 hours', date_trunc('day', now() + interval '2 days') + interval '10 hours'),
+          now() - interval '20 hours',
+          now() - interval '1 day'
+        )
+      $sql$,
+      H01, L11, B04, v_buyer, v_fee
     );
-
-    update public.listings
-    set hold_status = 'on_hold'
-    where id = L11;
+    -- hold_status column from migration_holds / hold_compat
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'listings' and column_name = 'hold_status'
+    ) then
+      execute format('update public.listings set hold_status = %L where id = %L::uuid', 'on_hold', L11);
+    end if;
   end if;
 
   -- -------------------------------------------------------------------------
-  -- 8) Listing reports (admin queue)
+  -- 8) Listing reports (optional — EXECUTE only)
   -- -------------------------------------------------------------------------
   if to_regclass('public.listing_reports') is not null then
-    insert into public.listing_reports (
-      id, listing_id, reporter_id, reason, status, admin_note, created_at
-    ) values
-    (
-      R01, L08, v_buyer,
-      'Photos may be outdated — kitchen looks different from a recent visit nearby.',
-      'open', '', now() - interval '2 days'
-    ),
-    (
-      R02, L03, v_buyer,
-      'Asking price seems far above recent Bahria Town comps; please verify.',
-      'open', '', now() - interval '1 day'
+    execute format(
+      $sql$
+        insert into public.listing_reports (
+          id, listing_id, reporter_id, reason, status, admin_note, created_at
+        ) values
+        (
+          %L::uuid, %L::uuid, %L::uuid,
+          'Photos may be outdated — kitchen looks different from a recent visit nearby.',
+          'open', '', now() - interval '2 days'
+        ),
+        (
+          %L::uuid, %L::uuid, %L::uuid,
+          'Asking price seems far above recent Bahria Town comps; please verify.',
+          'open', '', now() - interval '1 day'
+        )
+      $sql$,
+      R01, L08, v_buyer, R02, L03, v_buyer
     );
   end if;
 
@@ -617,17 +641,31 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Re-enable triggers
+-- Re-enable triggers (only if present)
 -- ---------------------------------------------------------------------------
-alter table public.listings enable trigger enforce_listing_rate_limit_trg;
-alter table public.messages enable trigger enforce_message_rate_limit_trg;
-alter table public.bookings enable trigger enforce_booking_rate_limit_trg;
-alter table public.bookings enable trigger validate_booking_row_trg;
-
 do $$
 declare
   r record;
 begin
+  for r in
+    select c.relname, t.tgname
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and not t.tgisinternal
+      and (
+        (c.relname = 'listings' and t.tgname = 'enforce_listing_rate_limit_trg')
+        or (c.relname = 'messages' and t.tgname = 'enforce_message_rate_limit_trg')
+        or (c.relname = 'bookings' and t.tgname in (
+          'enforce_booking_rate_limit_trg', 'validate_booking_row_trg'
+        ))
+      )
+  loop
+    execute format('alter table public.%I enable trigger %I', r.relname, r.tgname);
+    raise notice 'Re-enabled %.%', r.relname, r.tgname;
+  end loop;
+
   for r in
     select c.relname, t.tgname, p.proname
     from pg_trigger t
@@ -648,33 +686,5 @@ begin
     raise notice 'Re-enabled webhook-like trigger %.%', r.relname, r.tgname;
   end loop;
 end $$;
-
--- Bypass is transaction-local (set_config … true); nothing else to clear.
-
--- ---------------------------------------------------------------------------
--- Verification
--- ---------------------------------------------------------------------------
-select 'profiles' as table_name, count(*)::text as n from public.profiles
-union all select 'listings', count(*)::text from public.listings
-union all select 'listings_approved', count(*)::text from public.listings where status = 'approved'
-union all select 'listings_pending', count(*)::text from public.listings where status = 'pending'
-union all select 'listings_on_hold', count(*)::text from public.listings where hold_status = 'on_hold'
-union all select 'conversations', count(*)::text from public.conversations
-union all select 'messages', count(*)::text from public.messages
-union all select 'bookings', count(*)::text from public.bookings
-union all select 'holds', case when to_regclass('public.holds') is null then 'n/a' else (select count(*)::text from public.holds) end
-union all select 'listing_reports', case when to_regclass('public.listing_reports') is null then 'n/a' else (select count(*)::text from public.listing_reports) end
-union all select 'app_events', case when to_regclass('public.app_events') is null then 'n/a' else (select count(*)::text from public.app_events) end
-union all select 'webhook_events', case when to_regclass('public.webhook_events') is null then 'n/a' else (select count(*)::text from public.webhook_events) end
-union all select 'auth_users', count(*)::text from auth.users
-order by 1;
-
--- RLS still enabled on every public base table
-select c.relname as table_name, c.relrowsecurity as rls_enabled
-from pg_class c
-join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public'
-  and c.relkind = 'r'
-order by c.relname;
 
 commit;
